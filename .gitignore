@@ -1,6 +1,7 @@
 test_2/*
 test_3/*
 old_test/*
+tests/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

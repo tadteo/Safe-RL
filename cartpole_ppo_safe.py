@@ -6,6 +6,7 @@ from tensorflow.keras import layers
 import gym
 import scipy.signal
 import time
+import plot
 
 # Hyperparameters of the PPO algorithm
 steps_per_epoch = 4000
@@ -21,15 +22,15 @@ target_kl = 0.01
 hidden_sizes = (64, 64)
 
 # True if you want to render the environment
-render = True
+render = False
 goal_state = [0,0,0,0]
 
 #TODO: Modify this to be able to use the state distance.
 def discounted_cumulative_sums(x, discount):
     # Discounted cumulative sums of vectors for computing rewards-to-go and advantage estimates
-    print(x.shape,x)
-    print("Scipy signal lfilter",scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0))
-    print("Scipy signal lfilter [::-1]:",scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1])
+    # print(x.shape,x)
+    # print("Scipy signal lfilter",scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0))
+    # print("Scipy signal lfilter [::-1]:",scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1])
     return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
 
 
@@ -186,6 +187,10 @@ value_optimizer = keras.optimizers.Adam(learning_rate=value_function_learning_ra
 # Initialize the observation, episode return and episode length
 observation, episode_return, episode_length = env.reset(), 0, 0
 episode_distance = 0
+
+episodes, scores, logits_plot = [], [], []
+total_num_episodes = 0
+
 # Iterate over the number of epochs
 for epoch in range(epochs):
     # Initialize the sum of the returns, lengths and number of episodes for each epoch
@@ -228,7 +233,14 @@ for epoch in range(epochs):
             sum_length += episode_length
             sum_distance += episode_distance
             num_episodes += 1
-            print("episode:", epoch, "  score:", sum_return," last_value:", last_value,"  .")
+
+            total_num_episodes += 1
+
+            episodes.append(total_num_episodes)
+            scores.append(episode_return)
+            logits_plot.append(0)
+            print("Epoch: ",epoch, " episode: ", num_episodes, "  score:", episode_return," last_value:", last_value,".")
+
             observation, episode_return, episode_distance, episode_length = env.reset(), 0, 0, 0
 
     # Get values from the buffer
@@ -257,3 +269,5 @@ for epoch in range(epochs):
     print(
         f" Epoch: {epoch + 1}. Mean Return: {sum_return / num_episodes}. Mean Length: {sum_length / num_episodes}"
     )
+
+plot.plot_data(episodes,scores,logits_plot,"safe_ppo")

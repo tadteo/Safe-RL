@@ -6,6 +6,7 @@ from tensorflow.keras import layers
 import gym
 import scipy.signal
 import time
+import plot
 
 # Hyperparameters of the PPO algorithm
 steps_per_epoch = 4000
@@ -21,7 +22,7 @@ target_kl = 0.01
 hidden_sizes = (64, 64)
 
 # True if you want to render the environment
-render = True
+render = False
 
 def discounted_cumulative_sums(x, discount):
     # Discounted cumulative sums of vectors for computing rewards-to-go and advantage estimates
@@ -177,7 +178,9 @@ value_optimizer = keras.optimizers.Adam(learning_rate=value_function_learning_ra
 # Initialize the observation, episode return and episode length
 observation, episode_return, episode_length = env.reset(), 0, 0
 
+episodes, scores, logits_plot = [], [], []
 # Iterate over the number of epochs
+total_num_episodes = 0
 for epoch in range(epochs):
     # Initialize the sum of the returns, lengths and number of episodes for each epoch
     sum_return = 0
@@ -214,7 +217,15 @@ for epoch in range(epochs):
             sum_return += episode_return
             sum_length += episode_length
             num_episodes += 1
+            total_num_episodes += 1
+
+            episodes.append(total_num_episodes)
+            scores.append(episode_return)
+            logits_plot.append(0)
+            print("Epoch: ",epoch, " episode: ", num_episodes, "  score:", episode_return," last_value:", last_value,"  .")
+            
             observation, episode_return, episode_length = env.reset(), 0, 0
+
 
     # Get values from the buffer
     (
@@ -240,5 +251,7 @@ for epoch in range(epochs):
 
     # Print mean return and length for each epoch
     print(
-        f" Epoch: {epoch + 1}. Mean Return: {sum_return / num_episodes}. Mean Length: {sum_length / num_episodes}"
+        f"\n\n Epoch: {epoch + 1}. Mean Return: {sum_return / num_episodes}. Mean Length: {sum_length / num_episodes}"
     )
+
+plot.plot_data(episodes,scores,logits_plot,"normal_ppo")

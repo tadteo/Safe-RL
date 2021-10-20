@@ -1,7 +1,7 @@
 import pylab
 from datetime import datetime
 
-def plot_data(self, episodes, scores, max_q_mean, title):
+def plot_data(episodes, scores, max_q_mean, title):
         # datetime object containing current date and time
         now = datetime.now()
          
@@ -14,10 +14,10 @@ def plot_data(self, episodes, scores, max_q_mean, title):
         pylab.plot(episodes, max_q_mean, 'b')
         pylab.xlabel("Episodes")
         pylab.ylabel("Average Q Value")
-        pylab.savefig("{}_{}qvalues_{}.png".format(title,dt_string,self.id_nr))
+        pylab.savefig("{}_{}qvalues.png".format(title,dt_string))
 
         pylab.figure(1)
         pylab.plot(episodes, scores, 'b',linestyle="",marker="o")
         pylab.xlabel("Episodes")
         pylab.ylabel("Score")
-        pylab.savefig("{}_{}scores_{}.png".format(title,dt_string,self.id_nr))
+        pylab.savefig("{}_{}scores.png".format(title,dt_string))

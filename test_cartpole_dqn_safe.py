@@ -242,7 +242,7 @@ def main():
                         print("solved after", e-100, "episodes")
                         agent.plot_data(episodes,scores,min_q_mean[:e+1])
                         sys.exit()
-    plot.plot_data(agent,episodes,scores,min_q_mean,"safe")
+    plot.plot_data(episodes,scores,min_q_mean,"safe")
 
 
 if __name__ == "__main__":

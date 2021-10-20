@@ -237,7 +237,7 @@ def main():
                         print("solved after", e-100, "episodes")
                         agent.plot_data(episodes,scores,max_q_mean[:e+1])
                         sys.exit()
-    plot.plot_data(agent,episodes,scores,max_q_mean,"normal")
+    plot.plot_data(episodes,scores,max_q_mean,"normal")
 
 if __name__ == "__main__":
     main()
