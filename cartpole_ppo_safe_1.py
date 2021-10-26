@@ -22,7 +22,8 @@ target_kl = 0.01
 hidden_sizes = (64, 64)
 
 # True if you want to render the environment
-render = False
+render = True
+goal_state = [0,0,0,0]
 
 def discounted_cumulative_sums(x, discount):
     # Discounted cumulative sums of vectors for computing rewards-to-go and advantage estimates
@@ -176,7 +177,7 @@ policy_optimizer = keras.optimizers.Adam(learning_rate=policy_learning_rate)
 value_optimizer = keras.optimizers.Adam(learning_rate=value_function_learning_rate)
 
 # Initialize the observation, episode return and episode length
-observation, episode_return, episode_length = env.reset(), 0, 0
+observation, episode_return, episode_score, episode_length = env.reset(), 0, 0, 0
 
 episodes, scores, logits_plot = [], [], []
 # Iterate over the number of epochs
@@ -196,7 +197,9 @@ for epoch in range(epochs):
         observation = observation.reshape(1, -1)
         logits, action = sample_action(observation)
         observation_new, reward, done, _ = env.step(action[0].numpy())
-        episode_return += reward
+        distance = np.linalg.norm(observation_new-goal_state)
+        episode_return -= distance
+        episode_score += reward
         episode_length += 1
 
         # Get the value and log-probability of the action
@@ -204,7 +207,7 @@ for epoch in range(epochs):
         logprobability_t = logprobabilities(logits, action)
 
         # Store obs, act, rew, v_t, logp_pi_t
-        buffer.store(observation, action, reward, value_t, logprobability_t)
+        buffer.store(observation, action, distance, value_t, logprobability_t)
 
         # Update the observation
         observation = observation_new
@@ -220,11 +223,11 @@ for epoch in range(epochs):
             total_num_episodes += 1
 
             episodes.append(total_num_episodes)
-            scores.append(episode_return)
+            scores.append(episode_score)
             logits_plot.append(0)
-            print("Epoch: ",epoch, " episode: ", num_episodes, "  score:", episode_return," last_value:", last_value,"  .")
+            print("Epoch: ",epoch, " episode: ", num_episodes, " scores: ", episode_score," distance:", episode_return," last_value:", last_value,"  .")
             
-            observation, episode_return, episode_length = env.reset(), 0, 0
+            observation, episode_return, episode_score, episode_length = env.reset(), 0, 0, 0
 
 
     # Get values from the buffer
@@ -254,4 +257,4 @@ for epoch in range(epochs):
         f"\n\n Epoch: {epoch + 1}. Mean Return: {sum_return / num_episodes}. Mean Length: {sum_length / num_episodes}"
     )
 
-plot.plot_data(episodes,scores,logits_plot,"normal_ppo")
+plot.plot_data(episodes,scores,logits_plot,"safe_1_ppo")
