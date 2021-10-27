@@ -4,8 +4,9 @@ import random
 import numpy as np
 from collections import deque
 from keras.layers import Dense
-from keras.optimizers import Adam
+from tensorflow.keras.optimizers import Adam
 from keras.models import Sequential
+import tensorflow as tf
 import pdb
 import plot
 import math
@@ -124,7 +125,7 @@ class DQNAgent:
                 target[0][action] = distance
             else:
                 Q_future = min(self.target_model.predict(new_state)[0])
-            target[0][action] = distance + (Q_future-distance) ######## WHY DOES THIS WORK?
+                target[0][action] = distance + (Q_future-distance) ######## WHY DOES THIS WORK?
             targets.append(target)
             # self.model.fit(state, target, epochs = 1, verbose = 0)
 
@@ -167,7 +168,10 @@ class DQNAgent:
 def main():
     #For CartPole-v0, maximum episode length is 200
     env = gym.make('CartPole-v0') #Generate Cartpole-v0 environment object from the gym library
-
+    print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
+    gpu_devices = tf.config.experimental.list_physical_devices('GPU')
+    for device in gpu_devices:
+        tf.config.experimental.set_memory_growth(device, True)
     #Get state and action sizes from the environment
     state_size = env.observation_space.shape[0]
     action_size = env.action_space.n
@@ -220,6 +224,7 @@ def main():
             #Save sample <s, a, d, s'> to the replay memory
             agent.append_sample(state, action, distance, next_state, done)
             #Training step
+            print("Training step")
             agent.train_model()
             score += _ #Store episodic reward
             state = next_state #Propagate state
@@ -228,6 +233,7 @@ def main():
             if done:
                 #At the end of very episode, update the target network
                 if e % agent.target_update_frequency == 0:
+                    print("Updating target")
                     agent.update_target_model()
                 #Plot the play time for every episode
                 scores.append(score)
