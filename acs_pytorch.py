@@ -2,12 +2,12 @@
 
 import gym
 import numpy as np
-from collections import deque
+from collections import namedtuple, deque
 import random
 
 import torch
 from torch import nn
-
+import torch.optim as optim
 
 RENDER = True
 EPOCHS = 15 #30
@@ -15,7 +15,17 @@ STEPS_PER_EPOCH = 4000
 STEPS_IN_FUTURE = 10 #Number of steps in the future to predict 
 UPDATE_FREQUENCY = 10 #execute a step of training after this number of environment steps
 STEPS_OF_TRAINING = 3 #execute this number of gradient descent steps at each training step
-GOAL_STATE = [0,0,0,0] #Goal state for cartpole
+GOAL_STATE = torch.tensor([0,0,0,0]) #Goal state for cartpole
+
+
+def actor_loss(output, target):
+    return torch.sum((output - target)**2)
+
+def critic_loss(output, target):
+    return torch.sum((output - target)**2)
+
+def state_loss(output, target):
+    return torch.sum((output - target)**2)
 
 class ActorModel(nn.Module):
     def __init__(self, input_size, output_size, sizes=[32,64,32], activation=nn.ReLU()):
@@ -27,7 +37,7 @@ class ActorModel(nn.Module):
             self.layers.append(nn.Linear(sizes[i-1],sizes[i]))
             self.layers.append(activation)
         self.layers.append(nn.Linear(sizes[-1],output_size))
-        
+        # self.layers.append(nn.Tanh())
         self.net = nn.Sequential(*self.layers)
 
         print("Actor Model structure: ", self.net, "\n\n")
@@ -36,12 +46,15 @@ class ActorModel(nn.Module):
 
 
     def forward(self, input):
-        X = torch.Tensor(input)
+        X = input.float()
         for l in self.layers:
             X = l(X)
         return X
-
 class CriticModel(nn.Module):
+    '''
+    It is used to predict the next value (distance) given in input the state and the action taken 
+    The input is state and the action, the output is the next state
+    '''
     def __init__(self, input_size, output_size=1, sizes=[32,64,32], activation=nn.ReLU()):
         super(CriticModel, self).__init__()
         self.layers = []
@@ -60,7 +73,7 @@ class CriticModel(nn.Module):
 
 
     def forward(self, input):
-        X = torch.Tensor(input)
+        X = input.float()
         for l in self.layers:
             X = l(X)
         return X
@@ -80,7 +93,7 @@ class StateModel(nn.Module):
         for i in range(1,len(state_layers_sizes)):
             self.state_layers.append(nn.Linear(state_layers_sizes[i-1],state_layers_sizes[i]))
             self.state_layers.append(activation)
-        self.state_layers.append(nn.Linear(state_layers_sizes[-1],1))
+        # self.state_layers.append(nn.Linear(state_layers_sizes[-1],1))
         
         self.state_features = nn.Sequential(*self.state_layers)
 
@@ -91,7 +104,7 @@ class StateModel(nn.Module):
         for i in range(1,len(action_layers_sizes)):
             self.action_layers.append(nn.Linear(action_layers_sizes[i-1],action_layers_sizes[i]))
             self.action_layers.append(activation)
-        self.action_layers.append(nn.Linear(action_layers_sizes[-1],1))
+        # self.action_layers.append(nn.Linear(action_layers_sizes[-1],1))
         
         self.action_features = nn.Sequential(*self.action_layers)
 
@@ -106,25 +119,41 @@ class StateModel(nn.Module):
 
         self.features_layers = nn.Sequential(*self.layers)
 
-        print("State Model structure: ", self.features_layers, "\n\n")
+        print(f"State Model structure:\nState input: {self.state_features}\nAction input: {self.action_features}, After concat layers: {self.features_layers}\n\n")
+
         # for name, param in self.features_layers.named_parameters():
         #     print(f"Layer: {name} | Size: {param.size()} | Values : {param[:2]} \n")
 
     def forward(self, state_input, action_input):
-        X_state = torch.Tensor(state_input)
+        X_state = state_input.float()
+        # print("State Input: ", X_state)
         for l in self.state_layers:
             X_state = l(X_state)
         
-        X_action = torch.Tensor(action_input)
+        X_action = action_input.float()
+        # print("Action Input: ", X_action)
         for l in self.action_layers:
             X_action = l(X_action)
         
         X = torch.cat((X_state,X_action))
+        # print("Concatenated Input: ", X)
         for l in self.layers:
             X = l(X)
         
         return X
 
+class ReplayMemory(object):
+    def __init__(self, capacity):
+        self.memory = deque(maxlen=capacity)
+
+    def push(self, *args):
+        self.memory.append(Transition(*args))  https://pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
+    
+    def sample(self, batch_size):
+        return random.sample(self.memory, batch_size)
+    
+    def __len__(self):
+        return len(self.memory)
 
 class ACSAgent:
     def __init__(self,state_size, action_size, id_nr=0):
@@ -138,19 +167,38 @@ class ACSAgent:
         self.learning_rate = 0.001
         
         #Replay buffer
-        self.memory_buffer = deque(maxlen=self.memory_size)
+        self.memory_buffer = deque([],maxlen=self.memory_size)
 
         #Create networks
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        print('Using {} device'.format(device))
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        print('Using {} device'.format(self.device))
         
-        self.actor_model = ActorModel(input_size=self.state_size,output_size=self.action_size).to(device)
-        self.critic_model = CriticModel(input_size=self.state_size,output_size=(1)).to(device)
-        self.state_model = StateModel(state_size=self.state_size,action_size=self.action_size).to(device)
-    
-    def train_models(self):
-        mini_batch = random.sample(self.memory_buffer)
+        self.actor_model = ActorModel(input_size=self.state_size,output_size=self.action_size)
+        self.actor_model.to(self.device)
+        self.critic_model = CriticModel(input_size=self.state_size,output_size=(1))
+        self.critic_model.to(self.device)
+        self.state_model = StateModel(state_size=self.state_size,action_size=self.action_size)
+        self.state_model.to(self.device)
 
+        self.optimizer_agent = torch.optim.Adam(self.actor_model.parameters(), lr=self.learning_rate)
+        self.optimizer_critic = torch.optim.Adam(self.critic_model.parameters(), lr=self.learning_rate)
+        self.optimizer_state = torch.optim.Adam(self.state_model.parameters(), lr=self.learning_rate)
+
+
+    def train_models(self):
+        if len(self.memory_buffer) < self.batch_size:
+            return
+        #Sample batch from memory
+        mini_batch = random.sample(self.memory_buffer,self.batch_size)
+        print("Mini batch: ", type(mini_batch), type(mini_batch[0]))
+        # print(f"The mini batch is: {mini_batch}")
+        #update the target networks
+        # loss_agent = actor_loss()
+        # loss_agent.backward()
+        criterion_critic = nn.MSELoss()
+        loss_critic = criterion_critic(torch.tensor([dic['distance_critic'] for dic in mini_batch]),torch.tensor([dic['optimal_distance'] for dic in mini_batch])) #TODO: Extract also the distances in the predictions t have  a mix of distances with and without predictions
+        loss_critic.backward()
+        self.optimizer_critic.step()
 
 def main():
     import argparse
@@ -174,6 +222,9 @@ def main():
     agent = ACSAgent(state_size=state_size, action_size=action_size)
     logging.info(f"Agent created")
 
+
+    logging.debug(f'Starting training')
+
     total_num_episodes = 0
     for e in range(EPOCHS):    
         number_of_episodes = 0      
@@ -186,63 +237,77 @@ def main():
             if RENDER:
                 env.render()
             
+            
+            observation = torch.tensor(observation).to(agent.device)
             observation_old = observation
             logging.debug(f"The Observation type is: {type(observation)}") 
-            action = agent.actor_model(observation)  #TODO: Error when running in gpu: "RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cpu and cuda:0! (when checking argument for argument mat2 in method wrapper_mm)"
-
+            actions_values = agent.actor_model(observation)
+            print(f"The actions values are: {actions_values}")
+            action = torch.argmax(actions_values)
+            
             logging.debug(f"The action taken is: {action}")
             
             distance_predicted = agent.critic_model(observation)
             logging.debug(f"The distance predicted is: {distance_predicted}")
 
-            predicted_new_state = agent.state_model(state_input=observation,action_input=action)
+            predicted_new_state = agent.state_model(state_input=observation,action_input=actions_values)
             logging.debug(f"The predicted new state is: {predicted_new_state}")
 
             predictions = []
             future_state = predicted_new_state
+            future_action = action
             for i in range(STEPS_IN_FUTURE):
                 future_action = agent.actor_model(future_state)
-                logging.debug(f"The action {i} steps in the future taken is: {future_action}")
+                # logging.debug(f"The action {i} steps in the future taken is: {future_action}")
                 
                 future_distance_predicted = agent.critic_model(future_state)
-                logging.debug(f"The distance {i} steps in the future predicted is: {future_distance_predicted}")
+                # logging.debug(f"The distance {i} steps in the future predicted is: {future_distance_predicted}")
 
-                future_predicted_new_state = agent.state_model(state_input=future_state,action_input=action)
-                logging.debug(f"The new state predicted {i} steps in the future is: {future_predicted_new_state}")
+                future_predicted_new_state = agent.state_model(state_input=future_state,action_input=future_action)
+                # logging.debug(f"The new state predicted {i} steps in the future is: {future_predicted_new_state}")
                 predictions.append({"action":future_action, "distance":future_distance_predicted, "state":future_predicted_new_state})
                 future_state=future_predicted_new_state
 
                       
             #take a step in the environment
-            observation, reward, done, info = env.step(action) #the reward information is not used, just the states
+            observation, reward, done, info = env.step(action.cpu().detach().numpy()) #the reward information is not used, just the states
             
+            observation = torch.tensor(observation).to(agent.device)
+
+            goal_state = GOAL_STATE.to(agent.device)
+
+            logging.debug(f"The goal state is: {goal_state}, and observation is: {observation}")
             #calculate the distance
-            distance = np.linalg.norm(GOAL_STATE-observation) #to train Actor Model
+            distance = torch.linalg.norm(goal_state-observation) #to train Actor Model
             
-            distance_from_previous_state = np.linalg.norm(observation-observation_old) #to train Actor Model
-            distance_travelled_to_goal = distance - np.linalg.norm(GOAL_STATE-observation_old) #to plot and evaluate performances while training of actor model
+            distance_from_previous_state = torch.linalg.norm(observation-observation_old) #to train Actor Model
+            distance_travelled_to_goal = distance - torch.linalg.norm(goal_state-observation_old) #to plot and evaluate performances while training of actor model
             
-            distance_to_goal = np.linalg.norm(predictions[0]["state"]-observation) #to train Critic Model
+            distance_to_goal = torch.linalg.norm(predictions[0]["state"]-observation) #to train Critic Model
             for i in range(1,len(predictions)):
-                distance_to_goal += np.linalg.norm(predictions[i]["state"] - predictions[i-1]["state"])
-            distance_to_goal += agent.critic_model(predictions[-1]["state"]) #adding the predicted distance from last state predicted
+                distance_to_goal += torch.linalg.norm(predictions[i]["state"] - predictions[i-1]["state"])
+            logging.debug(f'Distance from last state predicted to goal: {agent.critic_model(predictions[-1]["state"])}')
+            distance_to_goal += agent.critic_model(predictions[-1]["state"]).item() #adding the predicted distance from last state predicted
             
             delta_distances = distance_to_goal-distance_predicted #to plot and evaluate performances while training of critic model
-            
+            logging.debug(f"Delta distances: {delta_distances}: Distance_from_state-Distance_with_predictions: {distance_predicted} - {distance_to_goal}")
+
             episode_length += 1
             episode_distance += distance_from_previous_state
 
-            agent.memory_buffer.append({"state":observation, "action": action, "distance_critic":distance_predicted, "distance_with_state_prediction":distance_to_goal, "state":predicted_new_state, "predictions":predictions})    
+            agent.memory_buffer.append({"state":observation, "action": action, "distance_critic":distance_predicted, "optimal_distance":distance, "distance_with_state_prediction":distance_to_goal, "state":predicted_new_state, "predictions":predictions})    
   
             #Reset the environment and save data
             if done or (t == STEPS_PER_EPOCH-1):
                 cumulative_epoch_distance += episode_distance
                 sum_episode_length += episode_length
-            
+                observation, episode_return, episode_distance, episode_length = env.reset(), 0, 0, 0
+
             if ((e*STEPS_PER_EPOCH)+t)%UPDATE_FREQUENCY == 0:
-                print("Training networks")
+                print("Updating networks")
                 for j in range(STEPS_OF_TRAINING):
                     agent.train_models()
+
 
 if __name__ == '__main__':
     main()
