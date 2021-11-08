@@ -24,7 +24,7 @@ class DQNAgent:
         self.state_size = state_size
         self.action_size = action_size
         self.id_nr = id_nr
-       # Modify here
+        # Modify here
 
         #Set hyper parameters for the DQN. Do not adjust those labeled as Fixed.
         self.discount_factor = 0.95
