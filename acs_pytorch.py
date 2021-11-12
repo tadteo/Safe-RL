@@ -15,15 +15,16 @@ from torch.distributions import Categorical
 
 from torch.utils.tensorboard import SummaryWriter
 
-
+ENV = 'Safexp-CarGoal1-v0'
 RENDER = True
-EPOCHS = 15 #30
-STEPS_PER_EPOCH = 4000
+EPOCHS = 50
+STEPS_PER_EPOCH = 10000
 STEPS_IN_FUTURE = 10 #Number of steps in the future to predict 
 UPDATE_FREQUENCY = 100 #execute a step of training after this number of environment steps
 STEPS_OF_TRAINING = 3 #execute this number of gradient descent steps at each training step
-GOAL_STATE = [0,0,0,0] #Goal state for cartpole
-GOAL_STATE = [0,0,0,0] #Goal state for car 
+GOAL_STATE = [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+              0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] #Goal state for car just for the goal input, we don't care about the rest of the state
+# GOAL_STATE = [0,0,0,0] #Goal state for cartpole
 
 ###FOR ON POLICY (PPO)
 ON_POLICY = False
@@ -65,7 +66,7 @@ class ActorModel(nn.Module):
 
         # self.layers.append(nn.Tanh())
         self.net = nn.Sequential(*self.layers)
-
+        
         print("Actor Model structure: ", self.net, "\n\n")
         # for name, param in self.net.named_parameters():
         #     print(f"Layer: {name} | Size: {param.size()} | Values : {param[:2]} \n")
@@ -73,7 +74,7 @@ class ActorModel(nn.Module):
 
     def forward(self, input):
         X = torch.tensor(input, device=self.device).float()
-        X = (X - X.min())/(X.max()-X.min())
+        # X = (X - X.min())/(X.max()-X.min())
         for l in self.layers:
             X = l(X)
             # print(X)
@@ -113,7 +114,7 @@ class StateModel(nn.Module):
     It is used to predict the next state given in input the state and the action taken 
     The input is state and the action, the output is the next state
     '''
-    def __init__(self, state_size, action_size, action_layers_sizes=[8,16,32], state_layers_sizes=[32,128,64,32], layers_sizes=[32,64,128,64,32], activation=nn.ReLU()):
+    def __init__(self, state_size, action_size, action_layers_sizes=[8,16,32], state_layers_sizes=[32,128,64,32], layers_sizes=[32,64,128, 128, 64,32], activation=nn.ReLU()):
         super(StateModel, self).__init__()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         
@@ -176,8 +177,17 @@ class StateModel(nn.Module):
         
         return X
 
-Prediction = namedtuple('Prediction', ("action", "distance", "state"))
-Transition = namedtuple('Transition', ('state', 'previous_state', 'action', 'distance_critic', 'distance_with_state_prediction',  'optimal_distance', 'predictions'))
+Prediction = namedtuple('Prediction', ("action", 
+                                       "distance", 
+                                       "state"))
+
+Transition = namedtuple('Transition', ('state', 
+                                       'previous_state', 
+                                       'action', 
+                                       'distance_critic', 
+                                       'distance_with_state_prediction',  
+                                       'optimal_distance', 
+                                       'predictions'))
 
 class ReplayMemory(object):
     def __init__(self, capacity):
@@ -247,9 +257,9 @@ class ACSAgent:
         # print(f"Previous State batch: {previous_state_batch.shape}")
         action_batch = torch.stack(mini_batch.action).to(self.device).float()
         # print("Action Batch: ", action_batch.shape)
-        distance_critic_batch = torch.cat(mini_batch.distance_critic).to(self.device).float()
+        distance_critic_batch = torch.stack(mini_batch.distance_critic).to(self.device).float()
         optimal_distance_batch = torch.stack(mini_batch.optimal_distance).to(self.device).float()
-        print(f"Optimal distance batch: {optimal_distance_batch.shape}")
+        # print(f"Optimal distance batch: {optimal_distance_batch.shape}")
         # print(f"Mini batch predictions, {type(mini_batch.predictions)}, {mini_batch.predictions}\n\n\n\n")
         # for p in mini_batch.predictions:
             # print(f"Prediction: {type(p)} {p}")
@@ -287,14 +297,37 @@ class ACSAgent:
         loss_state.backward()
         self.state_optimizer.step()
         
+        # torch.autograd.set_detect_anomaly(True)
         #compute actions(?)
-        actions = self.actor_model(state_batch)
-        state_predictions = self.state_model(state_batch,actions)
+        action = self.actor_model(state_batch)
+        dist = torch.distributions.Normal(action, self.action_var)
+        # print(f"Dist simple: {dist.rsample().detach().clone()}")
+        action_from_dist = dist.rsample().detach().clone()
+        state_prediction_with_similar_action = self.state_model(state_batch,action_from_dist)
+        # for i in range(10):
+        # 
+        # print(f"Distribution: {dist.mean}, {dist.stddev}")
+        # print(f"Sample: {dist.sample()}")
+        log_prob = dist.log_prob(action_from_dist).sum(-1,keepdim=True) #
+        # print(f"Log prob: {log_prob.size}, {log_prob}")
+        # state_prediction_with_similar_action = self.state_model(state_batch,dist.rsample())
+        actor_Q = self.critic_model(state_prediction_with_similar_action)
         
+        # print(f"State prediction with similar action: {state_prediction_with_similar_action[0].size()}")
+        # print(f"Distance critic batch: {distance_critic_batch.size()}")
+        # value_losses = torch.zeros(self.batch_size)
+        # criterion_actor = nn.SmoothL1Loss()
+        # for i in range(self.batch_size):
+        #     value_losses[i] = (criterion_actor(self.critic_model(state_prediction_with_similar_action[i]),distance_critic_batch[i]))
         
-        criterion_actor = nn.MSELoss()
-        # print(f"Q LOSS actor = {torch.mean(Q)}")
-        loss_actor = torch.mean(self.critic_model(state_predictions)) #torch.min(self.critic_model(state_batch))
+        # print(f"V LOSS actor = {value_losses}")
+        # value_losses = torch.tensor(value_losses)
+        # loss_actor = torch.stack(value_losses)
+        # loss_actor = value_losses.sum()
+        # loss_actor=self.critic_model(state_prediction_with_similar_action).sum()
+        loss_actor = (0.5  * log_prob - actor_Q).mean()
+        # loss_actor.copy_(state_prediction_with_similar_action.sum())
+        # print(f"LOSS actor = {loss_actor}")
         self.actor_optimizer.zero_grad()
         loss_actor.backward()
         self.actor_optimizer.step()
@@ -309,7 +342,7 @@ def main():
     logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
     
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env', type=str, default='Safexp-CarGoal1-v0') #CartPole-v0
+    parser.add_argument('--env', type=str, default=ENV) #CartPole-v0
 
     args = parser.parse_args()
     env = gym.make(args.env)
@@ -369,7 +402,7 @@ def main():
                 # logging.debug(f"The action probs are: {action_probs}")
                 action_raw= action_probs
                 dist = Categorical(action_probs)
-            print(f"The action raw are: {action_raw}")
+            # print(f"The action raw are: {action_raw}")
             action = dist.sample()
             action_logprob = dist.log_prob(action)
             
@@ -393,28 +426,52 @@ def main():
                     # logging.debug(f"The distance {i} steps in the future predicted is: {future_distance_predicted}")
                     future_predicted_new_state = agent.state_model(state_input=future_state,action_input=future_action)
                     # logging.debug(f"The new state predicted {i} steps in the future is: {future_predicted_new_state}")
+                    for s in future_predicted_new_state[(-3*16):(-2*16)]:
+                        if s == 1:
+                            break 
                     predictions.append(Prediction(future_action,future_distance_predicted,future_predicted_new_state))
                     future_state=future_predicted_new_state
                 
             #take a step in the environment
-            print("Action:",action)
+            # print("Action:",action)
             observation, _, done, info = env.step(action) #the reward information = "_" is not used, just the states
             
             observation = torch.tensor(observation, device=agent.device)
-            # goal_state = torch.tensor(GOAL_STATE, device=agent.device)
-            goal_state = torch.zeros(observation.shape, device=agent.device)
+            goal_state = torch.tensor(GOAL_STATE, device=agent.device)
+            # goal_state = torch.zeros(observation.shape, device=agent.device)
             
-            # logging.debug(f"The goal state is: {goal_state}, and observation is: {observation}")
+            
+            interesting_part_of_obs = observation[(-3*16):]
+            # logging.debug(f"The goal state is: {goal_state}, and observation is: {interesting_part_of_obs}")
+            
             #calculate the distance
-            distance_to_goal = torch.linalg.norm(goal_state-observation) #to train Actor Model
+            if max(observation[(-3*16):(-2*16)]) > 0:
+                distance_to_goal = 1/max(observation[(-3*16):(-2*16)])
+            else:
+                distance_to_goal = torch.tensor(100, device=agent.device,dtype=torch.float)
+            for n in observation[(-2*16):-16]:
+                if n>0.5:
+                    distance_to_goal += n
+            # distance_to_goal = torch.linalg.norm(goal_state-observation[(-3*16):-16]) #to train Actor Model
+            # print(f"The distance to goal is: {distance_to_goal.shape}")
             
+            previous_distance_to_goal = 1/max(observation_old[(-3*16):(-2*16)])
+            for n in observation_old[(-2*16):-16]:
+                if n>0.5:
+                    previous_distance_to_goal += n
+
+            distance_from_previous_state = distance_to_goal - previous_distance_to_goal
+            # distance_from_previous_state = torch.linalg.norm(observation-observation_old) #to train Actor Model
+            # distance_travelled_to_goal = distance_to_goal - torch.linalg.norm(goal_state-observation_old[(-3*16):-16]) #to plot and evaluate performances while training of actor model
             
-            distance_from_previous_state = torch.linalg.norm(observation-observation_old) #to train Actor Model
-            distance_travelled_to_goal = distance_to_goal - torch.linalg.norm(goal_state-observation_old) #to plot and evaluate performances while training of actor model
-            
-            distance_to_goal_with_predictions = torch.linalg.norm(predictions[0].state-observation) #to train Critic Model
+            distance_to_goal_with_predictions = 0  # torch.linalg.norm(predictions[0].state-observation) #to train Critic Model
             for i in range(1,len(predictions)):
-                distance_to_goal_with_predictions += torch.linalg.norm(predictions[i].state - predictions[i-1].state)
+                # previous_distance_to_goal = 1/max(observation_old[(-3*16):(-2*16)])
+                # for n in observation_old[(-2*16):-16]:
+                #     previous_distance_to_goal += n
+                distance_to_goal_with_predictions += predictions[i].distance -  predictions[i].distance
+                # distance_to_goal_with_predictions += torch.linalg.norm(predictions[i].state - predictions[i-1].state)
+            
             # logging.debug(f'Distance from last state predicted to goal: {agent.critic_model(predictions[-1]["state"])}')
             distance_to_goal_with_predictions += agent.critic_model(predictions[-1].state).item() #adding the predicted distance from last state predicted
             
@@ -425,7 +482,13 @@ def main():
             episode_length += 1
             episode_distance += distance_from_previous_state
             
-            agent.memory_buffer.push(observation, torch.tensor(observation_old, device = agent.device ), action_raw, distance_predicted, distance_to_goal_with_predictions, distance_to_goal, predictions)    
+            agent.memory_buffer.push(observation, 
+                                     torch.tensor(observation_old, device = agent.device ), 
+                                     action_raw, 
+                                     distance_predicted, 
+                                     distance_to_goal_with_predictions, 
+                                     distance_to_goal, 
+                                     predictions)    
             
             #Reset the environment and save data
             if done or (t == STEPS_PER_EPOCH-1):
@@ -436,6 +499,7 @@ def main():
                 writer.add_scalar("Performances/Episode distance", episode_distance, number_of_episodes)
                 number_of_episodes +=1
                 observation, episode_return, episode_distance, episode_length = env.reset(), 0, 0, 0
+                logging.info(f"Starting episode {number_of_episodes}")
             
             if ON_POLICY: #Based on PPO
                 # if ((e*STEPS_PER_EPOCH)+t)%UPDATE_FREQUENCY == 0:
@@ -496,18 +560,37 @@ def main():
                     writer.add_scalar("Loss/Loss: actor_on_policy", loss_actor.item(), steps)
                     writer.add_scalar("Loss/Loss: critic_on_policy", loss_critic.item(), steps)
                     writer.add_scalar("Loss/Loss: state_on_policy", loss_state.item(), steps)
+                    for name,weight in agent.actor_model.named_parameters():
+                        writer.add_histogram(name,weight,steps)
+                        writer.add_histogram(name+"/grad",weight.grad,steps)
                 old_action_logprob = action_logprob
                     
             if OFF_POLICY: #Based on SAC
                 if ((e*STEPS_PER_EPOCH)+t)%UPDATE_FREQUENCY == 0:
-                    print("Updating networks")
+                    # print("Updating networks")
                     # for j in range(STEPS_OF_TRAINING):
                     loss_actor, loss_critic, loss_state = agent.train_off_policy()
                     writer.add_scalar("Loss/Loss: actor_off_policy", loss_actor, steps)
                     writer.add_scalar("Loss/Loss: critic_off_policy", loss_critic, steps)
                     writer.add_scalar("Loss/Loss: state_off_policy", loss_state, steps)
+                    if(number_of_episodes%5==1):
+                        for name,weight in agent.actor_model.named_parameters():
+                            writer.add_histogram(name,weight,number_of_episodes)
+                            writer.add_histogram("actor/"+name+"/weight",weight,number_of_episodes)
+                            writer.add_histogram("actor/"+name+"/grad",weight.grad,number_of_episodes)
+                            
+                        for name,weight in agent.critic_model.named_parameters():
+                            writer.add_histogram(name,weight,number_of_episodes)
+                            writer.add_histogram("critic/"+name+"/weight",weight,number_of_episodes)
+                            writer.add_histogram("critic/"+name+"/grad",weight.grad,number_of_episodes)
+                        
+                        for name,weight in agent.state_model.named_parameters():
+                            writer.add_histogram(name,weight,number_of_episodes)
+                            writer.add_histogram("state/"+name+"/weight",weight,number_of_episodes)
+                            writer.add_histogram("critic/"+name+"/grad",weight.grad,number_of_episodes)
 
             steps += 1
+    writer.close()
 
 if __name__ == '__main__':
     main()
