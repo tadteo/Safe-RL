@@ -3,6 +3,7 @@ test_3/*
 old_test/*
 tests/*
 runs/*
+src/runs/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

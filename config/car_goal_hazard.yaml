@@ -27,5 +27,7 @@ on_policy : False
 
 # OFF POLICY parameters
 off_policy : True
+update_frequency: 100 #execute a step of training after this number of environment steps
+steps_in_future:  10
 
 has_continuous_action_space : True
