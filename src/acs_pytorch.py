@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import argparse
+import logging, sys
 import gym
 import safety_gym
 import numpy as np
@@ -8,7 +10,7 @@ import random
 from datetime import datetime
 
 import torch
-from torch import nn
+from torch import nn, optim
 from torch._C import device, dtype
 from torch.nn.modules import distance
 from torch.nn.modules.activation import Sigmoid
@@ -45,14 +47,31 @@ OFF_POLICY = True
 
 has_continuous_action_space = True
 
-def actor_loss(output, target):
-    return torch.sum((output - target)**2)
 
-def critic_loss(output, target):
-    return torch.sum((output - target)**2)
+Prediction = namedtuple('Prediction', ("action", 
+                                       "distance", 
+                                       "state"))
 
-def state_loss(output, target):
-    return torch.sum((output - target)**2)
+Transition = namedtuple('Transition', ('state', 
+                                       'previous_state', 
+                                       'action', 
+                                       'distance_critic', 
+                                       'distance_with_state_prediction',  
+                                       'optimal_distance', 
+                                       'predictions'))
+
+class ReplayMemory(object):
+    def __init__(self, capacity):
+        self.memory = deque(maxlen=capacity)
+
+    def push(self, *args):
+        self.memory.append(Transition(*args))  #https://pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
+    
+    def sample(self, batch_size):
+        return random.sample(self.memory, batch_size)
+    
+    def __len__(self):
+        return len(self.memory)
 
 class ActorModel(nn.Module):
 
@@ -113,7 +132,8 @@ class CriticModel(nn.Module):
 
 
     def forward(self, input):
-        X = input.clone().detach().float()
+        X = torch.tensor(input, dtype=torch.float, device=self.device)
+        X = X.clone().detach()
         for l in self.layers:
             X = l(X)
         return X
@@ -169,6 +189,11 @@ class StateModel(nn.Module):
         #     print(f"Layer: {name} | Size: {param.size()} | Values : {param[:2]} \n")
 
     def forward(self, state_input, action_input):
+        if(type(state_input) == np.ndarray):
+            state_input = torch.from_numpy(state_input).float().to(self.device)
+        if(type(action_input) == np.ndarray):
+            action_input = torch.from_numpy(action_input).float().to(self.device)
+        
         X_state = state_input.clone().detach().float()
         # # print("State Input: ", X_state)
         # for l in self.state_layers:
@@ -178,7 +203,6 @@ class StateModel(nn.Module):
         # # print("Action Input: ", X_action)
         # for l in self.action_layers:
         #     X_action = l(X_action)
-        
         X = torch.cat((X_state,X_action), dim=-1)
         # print(f"X.shape {X.shape}")
         # print("Concatenated Input: ", X)
@@ -186,31 +210,6 @@ class StateModel(nn.Module):
             X = l(X)
         
         return X
-
-Prediction = namedtuple('Prediction', ("action", 
-                                       "distance", 
-                                       "state"))
-
-Transition = namedtuple('Transition', ('state', 
-                                       'previous_state', 
-                                       'action', 
-                                       'distance_critic', 
-                                       'distance_with_state_prediction',  
-                                       'optimal_distance', 
-                                       'predictions'))
-
-class ReplayMemory(object):
-    def __init__(self, capacity):
-        self.memory = deque(maxlen=capacity)
-
-    def push(self, *args):
-        self.memory.append(Transition(*args))  #https://pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
-    
-    def sample(self, batch_size):
-        return random.sample(self.memory, batch_size)
-    
-    def __len__(self):
-        return len(self.memory)
 
 class ACSAgent:
     def __init__(self,state_size, action_size, id_nr=0):
@@ -251,15 +250,16 @@ class ACSAgent:
         self.critic_optimizer = torch.optim.Adam(self.critic_model.parameters(), lr=self.learning_rate)
         self.state_optimizer = torch.optim.Adam(self.state_model.parameters(), lr=self.learning_rate)
 
-    def select_action(self, env, obs) -> torch.tensor:
+    def select_action(self, env, obs, exploration_on = False) -> torch.tensor:
         """Select an action with exploration given the current policy
 
         Args:
             env ([type]): The environment in which the agent is playing
             obs ([type]): The observation obtained by the environment
         """
-        obs = torch.from_numpy(obs).float().to(self.device)
-        if random.random() < self.exploration_epsilon:
+        if (type(obs) ==np.ndarray):
+            obs = torch.from_numpy(obs).float().to(self.device)
+        if random.random() < self.exploration_epsilon and exploration_on:
                 action = env.action_space.sample()
                 action = torch.from_numpy(action).float().to(self.device)   
         else:
@@ -279,7 +279,7 @@ class ACSAgent:
                 action = dist.sample()
             action_logprob = dist.log_prob(action)
             
-        return action.detach().numpy()
+        return action.cpu().detach().numpy()
     
 
     def train_off_policy(self):
@@ -292,16 +292,28 @@ class ACSAgent:
         # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
         # detailed explanation). This converts batch-array of Transitions
         # to Transition of batch-arrays.
+        # print("Transitions: ", transitions)
         mini_batch = Transition(*zip(*transitions))
+        # print("Mini batch: ", mini_batch.state)
+        state_batch = np.array(mini_batch.state)
+        state_batch = torch.tensor(state_batch).float().to(self.device)
+        # print("Mini batch state: ", mini_batch_state)
+        # state_batch = torch.stack(mini_batch_state).to(self.device).float()
         
-        state_batch = torch.stack(mini_batch.state).to(self.device).float()
-        previous_state_batch = torch.stack(mini_batch.previous_state).to(self.device).float()
-        # print(f"Previous State batch: {previous_state_batch.shape}")
-        action_batch = torch.stack(mini_batch.action).to(self.device).float()
+        previous_state_batch = np.array(mini_batch.previous_state)
+        # previous_state_batch = torch.tensor(mini_batch.previous_state).float().to(self.device)
+        # previous_state_batch = torch.stack(mini_batch_previous_state).to(self.device).float()
+        
+        action_batch = np.array(mini_batch.action)        
+        action_batch = torch.tensor(mini_batch.action).float().to(self.device)
+        # action_batch = torch.stack(mini_batch.action).to(self.device).float()
         # print("Action Batch: ", action_batch.shape)
-        distance_critic_batch = torch.stack(mini_batch.distance_critic).to(self.device).detach().clone().float()
-        optimal_distance_batch = torch.stack(mini_batch.optimal_distance).to(self.device).float()
-        distance_with_state_prediction_batch = torch.stack(mini_batch.distance_with_state_prediction).to(self.device).float()
+        distance_critic_batch = torch.tensor(mini_batch.distance_critic).float().to(self.device)
+        # distance_critic_batch = torch.stack(mini_batch.distance_critic).to(self.device).detach().clone().float()
+        optimal_distance_batch = torch.tensor(mini_batch.optimal_distance).float().to(self.device)
+        # optimal_distance_batch = torch.stack(mini_batch.optimal_distance).to(self.device).float()
+        distance_with_state_prediction_batch = torch.tensor(mini_batch.distance_with_state_prediction).float().to(self.device)
+        # distance_with_state_prediction_batch = torch.stack(mini_batch.distance_with_state_prediction).to(self.device).float()
         # print(f"Optimal distance batch: {optimal_distance_batch.shape}")
         
         # for p in mini_batch.predictions:
@@ -320,7 +332,6 @@ class ACSAgent:
                 future_distance_predicted = self.critic_model(p.state)
                 target_Q[i] += (future_distance_predicted.item() - target_Q[i])
         
-        
         criterion_critic = nn.MSELoss()
         loss_critic = criterion_critic(self.critic_model(state_batch),distance_with_state_prediction_batch) #TODO: Extract also the distances in the predictions t have  a mix of distances with and without predictions
         self.critic_optimizer.zero_grad()
@@ -328,7 +339,7 @@ class ACSAgent:
         self.critic_optimizer.step()
         
         #Compute states and predicted states
-        state_predictions = self.state_model(previous_state_batch,action_batch.detach().clone())
+        state_predictions = self.state_model(previous_state_batch,action_batch)
         criterion_state = nn.MSELoss()
         loss_state = criterion_state(state_predictions,state_batch)
         self.state_optimizer.zero_grad()
@@ -342,10 +353,10 @@ class ACSAgent:
         dist = torch.distributions.Normal(action, self.action_var)
         
         #calculate the log_prob of the batch
-        buffer_log_prob = dist.log_prob(action_batch.detach().clone()).sum(-1, keepdim=True)
-        log_prob = buffer_log_prob.detach().clone()
+        buffer_log_prob = dist.log_prob(action_batch).sum(-1, keepdim=True)
+        log_prob = buffer_log_prob
         # print(f"Log prob: {log_prob.size()}, {log_prob}")
-        min_actor_Q = torch.full((self.batch_size,1),100000.0)
+        min_actor_Q = torch.full((self.batch_size,1),100000.0).to(self.device)
         for i in range(10):
             action_from_dist = dist.rsample().detach().clone()
             state_prediction_with_similar_action = self.state_model(state_batch,action_from_dist)
@@ -358,13 +369,15 @@ class ACSAgent:
                     log_prob[j] = dist.log_prob(action_from_dist).sum(-1, keepdim=True)[i]
         
         
-        # loss_actor = (0.5*log_prob*min_actor_Q).sum()+(0.5*buffer_log_prob*distance_with_state_prediction_batch).sum()
-        loss_actor = +(0.5*buffer_log_prob*distance_with_state_prediction_batch).sum()
+        # loss_actor = (0.5*log_prob*min_actor_Q).sum() #+(0.5*buffer_log_prob*distance_with_state_prediction_batch).sum()
+        loss_actor = (0.5*dist.log_prob(action).sum(-1, keepdim=True)*optimal_distance_batch).sum()
+        # loss_actor = +(0.5*buffer_log_prob*distance_with_state_prediction_batch).sum()
         # print(f"LOSS actor = {loss_actor}")
         self.actor_optimizer.zero_grad()
         loss_actor.backward()
         self.actor_optimizer.step()
         
+        logging.info(f"Training step completed, returning")
         return loss_actor.item(), loss_critic.item(), loss_state.item()
 
 def flatten_obs(obs):
@@ -381,8 +394,7 @@ def flatten_obs(obs):
     return obs
 
 def main():
-    import argparse
-    import logging, sys
+
     
     ### Parsing of the arguments
     logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)

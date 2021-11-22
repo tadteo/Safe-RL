@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 
-import configparser
+import numpy as np
+import torch
 import yaml
 import logging, sys
     
     
 from safety_gym.envs.engine import Engine 
 
-from acs_pytorch import EPOCHS, MIN_EPSILON, STEPS_PER_EPOCH, ACSAgent
+from acs_pytorch import OFF_POLICY, ON_POLICY, ACSAgent, Prediction
 
 from torch.utils.tensorboard import SummaryWriter
 
@@ -20,10 +21,15 @@ RENDER = config.get('render')
 HAS_CONTINUOUS_ACTION_SPACE = config.get('has_continuous_action_space')
 EPOCHS = config.get('epochs')
 STEPS_PER_EPOCH = config.get('steps_per_epoch')
+UPDATE_FREQUENCY = config.get('update_frequency')
+
+STEPS_IN_FUTURE = config.get('steps_in_future')
 
 #Agent parameters
 MIN_EPSILON = config.get('min_epsilon')
 
+ON_POLICY = config.get('on_policy')
+OFF_POLICY = config.get('off_policy')
 
 logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
 
@@ -38,9 +44,9 @@ def main():
     logging.debug(f'State size = {state_size}')
     
     
-    observation_dict = env.reset()
+    observation = env.reset()
     
-    print(observation_dict)
+    print(observation)
     
     # action space dimension
     if HAS_CONTINUOUS_ACTION_SPACE:
@@ -71,9 +77,26 @@ def main():
             total_number_of_steps += 1
             episode_steps += 1
             
-            
-            action = agent.select_action(env, observation)
-            
+            predictions = []
+            #predict future:
+            future_observation = observation
+            for i in range(STEPS_IN_FUTURE):
+                future_action = agent.select_action(env, future_observation, exploration_on=False)
+                future_state_predicted = agent.state_model(state_input=future_observation, action_input=future_action)
+                future_distance_predicted = agent.critic_model(future_state_predicted)
+                #check if a path of states to the goal has been found
+                for s in future_state_predicted[:16]:
+                    if s == 1:
+                        print("Found path to goal")
+                        break
+                predictions.append(Prediction(action=future_action, 
+                                              state=future_state_predicted, 
+                                              distance=future_distance_predicted))
+                
+                future_observation = future_state_predicted
+                
+            action = agent.select_action(env, observation, exploration_on=True)
+            previous_observation = observation
             observation, reward, done, info = env.step(action) # Reward not used
             
             goal_vector = observation[:16]
@@ -90,15 +113,26 @@ def main():
                 #     distance_to_goal += 1/(1-max(hazards_vector))
             
             distance_to_goal = 1-(1/(1+distance_to_goal))
-            logging.debug(f"The distance to goal is: {distance_to_goal}")
+            logging.debug(f"{episode_steps}. The distance to goal is: {distance_to_goal}")
             
+            
+            episode_distance_traveled += np.linalg.norm(observation-previous_observation)
+            
+            # Memory buffer components
+            #'state', 
+            #'previous_state', 
+            #'action', 
+            #'distance_critic', 
+            #'distance_with_state_prediction',  
+            #'optimal_distance', 
+            #'predictions')
             agent.memory_buffer.push(observation, 
-                                     0, 
+                                     previous_observation, 
                                      action, 
                                      0, 
                                      0, 
                                      optimal_distance, #optimal_distance is the distance to goal when you are enough far away from the obstacles
-                                     [])
+                                     predictions)
             
             
             
@@ -114,6 +148,32 @@ def main():
                 
                 logging.info(f"Starting episode {total_number_of_episodes}")
                 agent.exploration_epsilon = max(MIN_EPSILON, agent.exploration_epsilon/total_number_of_episodes)
+            
+            if ON_POLICY:
+                agent.train_on_policy()
+            if OFF_POLICY:
+                if total_number_of_steps % UPDATE_FREQUENCY == 0:
+                    loss_actor, loss_critic, loss_state = agent.train_off_policy()
+                    writer.add_scalar("Loss/Loss: actor_off_policy", loss_actor, total_number_of_steps)
+                    writer.add_scalar("Loss/Loss: critic_off_policy", loss_critic, total_number_of_steps)
+                    writer.add_scalar("Loss/Loss: state_off_policy", loss_state, total_number_of_steps)
+                if(total_number_of_episodes%5==1):
+                    for name,weight in agent.actor_model.named_parameters():
+                        writer.add_histogram(name,weight,total_number_of_episodes)
+                        writer.add_histogram("actor/"+name+"/weight",weight,total_number_of_episodes)
+                        writer.add_histogram("actor/"+name+"/grad",weight.grad,total_number_of_episodes)
+                        
+                    for name,weight in agent.critic_model.named_parameters():
+                        writer.add_histogram(name,weight,total_number_of_episodes)
+                        writer.add_histogram("critic/"+name+"/weight",weight,total_number_of_episodes)
+                        writer.add_histogram("critic/"+name+"/grad",weight.grad,total_number_of_episodes)
+                    
+                    for name,weight in agent.state_model.named_parameters():
+                        writer.add_histogram(name,weight,total_number_of_episodes)
+                        writer.add_histogram("state/"+name+"/weight",weight,total_number_of_episodes)
+                        writer.add_histogram("critic/"+name+"/grad",weight.grad,total_number_of_episodes)
+
+                
     writer.close()
     
         

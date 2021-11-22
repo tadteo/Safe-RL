@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import configparser
 import yaml
 import logging, sys
     
@@ -49,7 +48,7 @@ def main():
     agent = ACSAgent(state_size=state_size, action_size=action_size)
     logging.info(f"Agent created")
 
-    writer = SummaryWriter()
+    writer = SummaryWriter(log_dir='../runs/')
 
     logging.info(f'Starting training')
     steps = 0
