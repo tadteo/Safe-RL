@@ -60,6 +60,8 @@ Transition = namedtuple('Transition', ('state',
                                        'optimal_distance', 
                                        'predictions'))
 
+## adding a comment
+
 class ReplayMemory(object):
     def __init__(self, capacity):
         self.memory = deque(maxlen=capacity)
