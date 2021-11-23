@@ -15,7 +15,7 @@ environment:
 
 render : True
 epochs : 50
-steps_per_epoch : 10000
+steps_per_epoch : 5000 #10000
 
 #agent parameters
 min_epsilon: 0.01
@@ -27,7 +27,12 @@ on_policy : False
 
 # OFF POLICY parameters
 off_policy : True
-update_frequency: 100 #execute a step of training after this number of environment steps
+update_frequency: 64 #execute a step of training after this number of environment steps
 steps_in_future:  10
+batch_size: 64
+
+discount_factor: 0.99
+initial_variance: 1000
+final_variance: 0.0001
 
 has_continuous_action_space : True

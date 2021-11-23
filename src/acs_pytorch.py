@@ -77,7 +77,7 @@ class ReplayMemory(object):
 
 class ActorModel(nn.Module):
 
-    def __init__(self, input_size, output_size, sizes=[32,64,64,32], activation=nn.Tanh()):
+    def __init__(self, input_size, output_size, sizes=[32,64,128,128,64,32], activation=nn.ReLU()):
         super(ActorModel, self).__init__()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.layers = []
@@ -89,7 +89,7 @@ class ActorModel(nn.Module):
         self.layers.append(nn.Linear(sizes[-1],output_size))
         
         if has_continuous_action_space :
-            self.layers.append(nn.Tanh())
+            pass
         else:
             self.layers.append(nn.Softmax(dim=-1))
 
@@ -114,7 +114,7 @@ class CriticModel(nn.Module):
     It is used to predict the distance given in input the state of the environment 
     The input is state, the output is the distance to the goal state
     '''
-    def __init__(self, input_size, output_size=1, sizes=[32,64,64,32], activation=nn.Tanh()):
+    def __init__(self, input_size, output_size=1, sizes=[32,64,128,64,32], activation=nn.ReLU()):
         super(CriticModel, self).__init__()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.layers = []
@@ -214,16 +214,26 @@ class StateModel(nn.Module):
         return X
 
 class ACSAgent:
-    def __init__(self,state_size, action_size, id_nr=0):
+    def __init__(self,state_size, 
+                 action_size, 
+                 batch_size, 
+                 initial_variance, final_variance, 
+                 discount_factor, 
+                 id_nr=0):
         self.state_size = state_size
         self.action_size = action_size
         self.id_nr = id_nr
 
         #Hyperparameters:
-        self.batch_size = 32
-        self.memory_size = 10000
+        self.batch_size = batch_size
+        self.memory_size = 100
         self.learning_rate = 0.001
         
+        self.initial_variance = initial_variance
+        self.final_variance = final_variance
+        self.actual_variance = initial_variance
+        
+        self.discount_factor = discount_factor
         self.exploration_epsilon = INITIAL_EPSILON
         
         #ON Policy (PPO) hyperparameters:
@@ -238,14 +248,15 @@ class ACSAgent:
 
         if has_continuous_action_space:
             self.action_size = action_size
-            self.action_var = torch.full((action_size,), action_std * action_std).to(self.device)
-
+            print("Self.action_size: ", self.action_size)
+            self.action_covariance_matrix = torch.diag(torch.full((self.action_size), self.actual_variance, dtype=torch.float, device=self.device))
+            # print("Action Covariance Matrix: ", self.action_covariance_matrix)
         #Create networks
-        self.actor_model = ActorModel(input_size=self.state_size,output_size=self.action_size)
+        self.actor_model = ActorModel(input_size=self.state_size,output_size=self.action_size[0])
         self.actor_model = self.actor_model.to(self.device)
         self.critic_model = CriticModel(input_size=self.state_size,output_size=(1))
         self.critic_model = self.critic_model.to(self.device)
-        self.state_model = StateModel(state_size=self.state_size,action_size=self.action_size)
+        self.state_model = StateModel(state_size=self.state_size,action_size=self.action_size[0])
         self.state_model = self.state_model.to(self.device)
 
         self.actor_optimizer = torch.optim.Adam(self.actor_model.parameters(), lr=self.learning_rate)
@@ -261,16 +272,24 @@ class ACSAgent:
         """
         if (type(obs) ==np.ndarray):
             obs = torch.from_numpy(obs).float().to(self.device)
-        if random.random() < self.exploration_epsilon and exploration_on:
-                action = env.action_space.sample()
-                action = torch.from_numpy(action).float().to(self.device)   
-        else:
+        if exploration_on:
             if has_continuous_action_space:
                 action_mean = self.actor_model(obs)
                 # logging.debug(f"Action mean: {action_mean}")
                 action_raw = action_mean
-                cov_mat = torch.diag(self.action_var).unsqueeze(dim=0)
-                dist = MultivariateNormal(action_mean, cov_mat)
+                dist = MultivariateNormal(action_mean, self.action_covariance_matrix)
+                action = dist.rsample()
+                # action = action_mean
+            else:
+                # logging.debug(f"The Observation type is: {observation}")
+                action_probs = self.actor_model(obs)
+                # logging.debug(f"The action probs are: {action_probs}")
+                action_raw= action_probs
+                dist = Categorical(action_probs)
+                action = dist.sample()           
+        else:
+            if has_continuous_action_space:
+                action_mean = self.actor_model(obs)
                 action = action_mean
             else:
                 # logging.debug(f"The Observation type is: {observation}")
@@ -279,12 +298,61 @@ class ACSAgent:
                 action_raw= action_probs
                 dist = Categorical(action_probs)
                 action = dist.sample()
-            action_logprob = dist.log_prob(action)
+        
+        action_logprob = dist.log_prob(action)
             
         return action.cpu().detach().numpy()
     
+    def train_critic(self, writer, total_number_of_steps, previous_state_batch, state_batch, predictions_batch, optimal_distance_batch):
+        # #Compute Q values
+        # alpha = 0.2
+        # gamma = 0.99
+        # # print(f"State batch: {state_batch.shape}")
+        # target_Q = optimal_distance_batch
+        # # print(f"Q: {Q.size}, {Q}")
+        # for i in range(self.batch_size):
 
-    def train_off_policy(self):
+        #     for p in predictions_batch[i]:                
+        #         future_distance_predicted = self.critic_model(p.state)
+        #         target_Q[i] += (future_distance_predicted.item() - target_Q[i])
+        
+        # action_mean = self.actor_model(state_batch)
+        # dist = MultivariateNormal(action_mean, self.action_covariance_matrix)
+        # next_action_batch = dist.rsample()
+        # log_prob = dist.log_prob(next_action_batch).sum(-1,keepdim=True)
+        # print("Log Prob: ", log_prob)
+        # target_V = self.critic_model(state_batch) - alpha * log_prob
+        # target_Q = optimal_distance_batch + self.discount_factor * target_V
+        # target_Q = target_Q.detach()
+        # target_Q = target_V.detach()
+        
+        # with torch.no_grad():
+            # writer.add_scalar('Q/Predicted Q', self.critic_model(previous_state_batch).mean().item(), total_number_of_steps)
+            # writer.add_scalar('Q/Target Q', target_Q.mean().item(), total_number_of_steps)
+        criterion_critic = nn.MSELoss()
+        # loss_critic = criterion_critic(self.critic_model(previous_state_batch),target_Q) #TODO: Extract also the distances in the predictions t have  a mix of distances with and without predictions
+        loss_critic = criterion_critic(self.critic_model(state_batch),optimal_distance_batch) #correct
+        self.critic_optimizer.zero_grad()
+        loss_critic.backward()
+        self.critic_optimizer.step()
+        
+        return loss_critic
+    
+    def train_actor(self, obs, action, reward, next_obs, done):
+        pass
+    
+    def train_state(self, previous_state_batch, state_batch, action_batch):
+        #Compute states and predicted states
+        state_predictions = self.state_model(previous_state_batch,action_batch)
+        criterion_state = nn.MSELoss()
+        loss_state = criterion_state(state_predictions,state_batch)
+        self.state_optimizer.zero_grad()
+        loss_state.backward()
+        self.state_optimizer.step()
+
+        return loss_state
+
+    def train_off_policy(self, writer , total_number_of_steps):
         
         if len(self.memory_buffer) < self.batch_size:
             return 0 ,0 ,0
@@ -322,62 +390,82 @@ class ACSAgent:
             # print(f"Prediction: {type(p)} {p}")
         # predictions_batch = torch.cat(Prediction(*zip(*mini_batch.predictions))).to(self.device).float()
 
-        #Compute Q values
-        alpha = 0.2
-        gamma = 0.99
-        # print(f"State batch: {state_batch.shape}")
-        target_Q = optimal_distance_batch
-        # print(f"Q: {Q.size}, {Q}")
-        for i in range(self.batch_size):
-
-            for p in mini_batch.predictions[i]:                
-                future_distance_predicted = self.critic_model(p.state)
-                target_Q[i] += (future_distance_predicted.item() - target_Q[i])
+        loss_critic = self.train_critic(writer, total_number_of_steps, previous_state_batch, state_batch, mini_batch.predictions, optimal_distance_batch)
         
-        criterion_critic = nn.MSELoss()
-        loss_critic = criterion_critic(self.critic_model(state_batch),distance_with_state_prediction_batch) #TODO: Extract also the distances in the predictions t have  a mix of distances with and without predictions
-        self.critic_optimizer.zero_grad()
-        loss_critic.backward()
-        self.critic_optimizer.step()
-        
-        #Compute states and predicted states
-        state_predictions = self.state_model(previous_state_batch,action_batch)
-        criterion_state = nn.MSELoss()
-        loss_state = criterion_state(state_predictions,state_batch)
-        self.state_optimizer.zero_grad()
-        loss_state.backward()
-        self.state_optimizer.step()
+        loss_state = self.train_state(previous_state_batch, state_batch, action_batch)
         
         #Calculate the distribution of the action based on the state and caluculate the minimum value from the n samples of the distribution
         #Use the minimum and the original action value to calculate the loss
         
         action = self.actor_model(state_batch)
-        dist = torch.distributions.Normal(action, self.action_var)
+        # action = dist.rsample()
+        # log_prob = dist.log_prob(action).sum(-1,keepdim=True)
+        print("Action: ", action)
+        print("Action Batch: ", action_batch)
+        dist_batch = []
+        log_prob_batch = []
+        for i in range(self.batch_size):
+            # print(f"Action batch: {action[i]}")
+            dist = MultivariateNormal(action[i], self.action_covariance_matrix)
+            dist_batch.append(dist)
+            # print(f"Distribution: {dist}")
+            #calculate the log_prob of the batch
+            log_prob_batch.append(dist.log_prob(action[i]).sum(-1, keepdim=True))
+        # print(f"Log prob: {log_prob_batch}")
         
-        #calculate the log_prob of the batch
-        buffer_log_prob = dist.log_prob(action_batch).sum(-1, keepdim=True)
-        log_prob = buffer_log_prob
-        # print(f"Log prob: {log_prob.size()}, {log_prob}")
-        min_actor_Q = torch.full((self.batch_size,1),100000.0).to(self.device)
-        for i in range(10):
-            action_from_dist = dist.rsample().detach().clone()
-            state_prediction_with_similar_action = self.state_model(state_batch,action_from_dist)
-            actor_Q = self.critic_model(state_prediction_with_similar_action)
-            min_actor_Q = torch.minimum(min_actor_Q,actor_Q)
-            
-            #modify the logprob just of the action of the min_actor_Q
-            for j in range(self.batch_size):
-                if min_actor_Q[j] == actor_Q[j]:
-                    log_prob[j] = dist.log_prob(action_from_dist).sum(-1, keepdim=True)[i]
+        log_prob_batch = torch.tensor(log_prob_batch, device=self.device)
         
+        # min_actor_Q = torch.full((self.batch_size,),100000.0).to(self.device)
+        # for i in range(10):
+        #     for j in range(self.batch_size):
+        #         action_from_dist = dist_batch[j].rsample().detach().clone()
+        #         state_prediction_with_similar_action = self.state_model(state_batch[j], action_from_dist)
+        #         actor_Q = self.critic_model(state_prediction_with_similar_action)
+        #         min_actor_Q[j] = torch.minimum(min_actor_Q[j],actor_Q)
+                
+        #         #modify the logprob just of the action of the min_actor_Q
+        #         if min_actor_Q[j] == actor_Q:
+        #             log_prob_batch[j] = dist_batch[j].log_prob(action_from_dist).sum(-1, keepdim=True)
         
+        state_prediction = self.state_model(state_batch, action)
+        
+        state_prediction = state_prediction
+        distance_list = []
+        #calculate the distance
+        for i in range(self.batch_size):
+            goal_vector = state_prediction[i][:16]
+            hazards_vector = state_prediction[i][16:]
+            # print(f"Goal vector: {goal_vector}")
+            # print(f"Hazards vector: {hazards_vector}")
+            if max(goal_vector) >= 0.9:
+                distance_to_goal = 0
+            else:
+                distance_to_goal = 1/max(max(goal_vector),0.001) #(1-max(observation[(-3*16):(-2*16)]))*
+                if max(hazards_vector) >= 0.5: #observation hazard
+                    distance_to_goal += 1/(1-max(hazards_vector))
+            distance_list.append(distance_to_goal.item())
+        
+        distance_list = torch.tensor(distance_list).to(self.device)
         # loss_actor = (0.5*log_prob*min_actor_Q).sum() #+(0.5*buffer_log_prob*distance_with_state_prediction_batch).sum()
-        loss_actor = (0.5*dist.log_prob(action).sum(-1, keepdim=True)*optimal_distance_batch).sum()
+        alpha = 0.01
+        print(f"Log prob batch: {log_prob_batch}")
+        print(f"Distance: {distance_list}")
+        loss_actor = (-alpha*log_prob_batch*distance_list).sum() / self.batch_size
         # loss_actor = +(0.5*buffer_log_prob*distance_with_state_prediction_batch).sum()
         # print(f"LOSS actor = {loss_actor}")
         self.actor_optimizer.zero_grad()
         loss_actor.backward()
         self.actor_optimizer.step()
+        
+        
+        if self.actual_variance > self.final_variance:
+            self.actual_variance = self.actual_variance - 0.05*self.actual_variance
+            if self.actual_variance < self.final_variance:
+                self.actual_variance = self.final_variance
+            self.action_covariance_matrix = torch.diag(torch.full((self.action_size), self.actual_variance, dtype=torch.float, device=self.device))
+        
+        writer.add_scalar("Variance", self.actual_variance, total_number_of_steps)
+        logging.info("Action covariance matrix: {}".format(self.action_covariance_matrix))
         
         logging.info(f"Training step completed, returning")
         return loss_actor.item(), loss_critic.item(), loss_state.item()
@@ -396,7 +484,6 @@ def flatten_obs(obs):
     return obs
 
 def main():
-
     
     ### Parsing of the arguments
     logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
