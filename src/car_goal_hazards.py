@@ -118,12 +118,12 @@ def main():
             hazards_vector = observation[16:]
             
             #calculate the distance
-            if max(goal_vector) >= 0.9:
+            if max(goal_vector) >= 0.8:
                 distance_to_goal = 0
                 optimal_distance = 0
             else:
-                distance_to_goal = 1/max(max(goal_vector),0.001) #(1-max(observation[(-3*16):(-2*16)]))*
-                optimal_distance = 1/max(max(goal_vector),0.001)
+                distance_to_goal = 1/max(max(goal_vector),0.0001) #(1-max(observation[(-3*16):(-2*16)]))*
+                optimal_distance = 1/max(max(goal_vector),0.0001)
                 if max(hazards_vector) >= 0.5: #observation hazard
                     distance_to_goal += 1/(1-max(hazards_vector))
             

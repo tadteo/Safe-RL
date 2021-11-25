@@ -102,7 +102,11 @@ class ActorModel(nn.Module):
 
 
     def forward(self, input):
-        X = input.clone().detach().float()
+        if(type(input) == np.ndarray):
+            X = torch.from_numpy(input).float().to(self.device)
+        else:
+            X = input.clone().detach().float()   
+        
         # X = (X - X.min())/(X.max()-X.min())
         for l in self.layers:
             X = l(X)
@@ -134,7 +138,11 @@ class CriticModel(nn.Module):
 
 
     def forward(self, input):
-        X = torch.tensor(input, dtype=torch.float, device=self.device)
+        if(type(input) == np.ndarray):
+            X = torch.from_numpy(input).float().to(self.device)
+        else:
+            X = input.clone().detach().float()    
+        #X = torch.tensor(input, dtype=torch.float, device=self.device)
         X = X.clone().detach()
         for l in self.layers:
             X = l(X)
@@ -398,6 +406,7 @@ class ACSAgent:
         #Use the minimum and the original action value to calculate the loss
         
         action = self.actor_model(state_batch)
+        previous_action = self.actor_model(previous_state_batch)
         # action = dist.rsample()
         # log_prob = dist.log_prob(action).sum(-1,keepdim=True)
         print("Action: ", action)
@@ -446,11 +455,37 @@ class ACSAgent:
             distance_list.append(distance_to_goal.item())
         
         distance_list = torch.tensor(distance_list).to(self.device)
+        
+        previous_state_prediction = self.state_model(previous_state_batch, previous_action)        
+        previous_distance_list = []
+        
+        for i in range(self.batch_size):
+            goal_vector = state_batch[i][:16]
+            hazards_vector = state_batch[i][16:]
+            # print(f"Goal vector: {goal_vector}")
+            # print(f"Hazards vector: {hazards_vector}")
+            if max(goal_vector) >= 0.9:
+                distance_to_goal = 0
+            else:
+                distance_to_goal = 1/max(max(goal_vector),0.001) #(1-max(observation[(-3*16):(-2*16)]))*
+                if max(hazards_vector) >= 0.5: #observation hazard
+                    distance_to_goal += 1/(1-max(hazards_vector))
+            previous_distance_list.append(distance_to_goal.item())
+        
+        previous_distance_list = torch.tensor(previous_distance_list).to(self.device)
+        
+        
         # loss_actor = (0.5*log_prob*min_actor_Q).sum() #+(0.5*buffer_log_prob*distance_with_state_prediction_batch).sum()
         alpha = 0.01
-        print(f"Log prob batch: {log_prob_batch}")
-        print(f"Distance: {distance_list}")
-        loss_actor = (-alpha*log_prob_batch*distance_list).sum() / self.batch_size
+        
+        # loss_actor = (-alpha*log_prob_batch*distance_list).sum() / self.batch_size
+        
+        distance_list = distance_list.reshape(1,-1).t().to(self.device)
+        previous_distance_list = previous_distance_list.reshape(1,-1).t().to(self.device)
+        # print(f"Log prob batch: {log_prob_batch}")
+        # print(f"Distance: {distance_list}")
+        # criterion_action = nn.MSELoss()
+        loss_actor = (distance_list).sum() #((action-previous_action)**2*(distance_list-previous_distance_list)+distance_list).sum()
         # loss_actor = +(0.5*buffer_log_prob*distance_with_state_prediction_batch).sum()
         # print(f"LOSS actor = {loss_actor}")
         self.actor_optimizer.zero_grad()
