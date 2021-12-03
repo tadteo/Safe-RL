@@ -1,0 +1,38 @@
+# Configuaration for the goal hazard car environement
+
+environment:
+  #The environment to use
+  robot_base: 'xmls/car.xml'
+  task : 'goal'
+  observation_flatten : True
+  observe_goal_lidar : True
+  observe_hazards : True
+  constrain_hazards : True
+  # lidar_max_dist : 3
+  lidar_num_bins : 16
+  hazards_num : 4
+  observe_sensors : False # Disable visualizations of internal sensors for simpler state management    
+
+render : True
+epochs : 50
+steps_per_epoch : 5000 #10000
+
+#agent parameters
+min_epsilon: 0.01
+parameters:
+  alpha : 0.1
+
+#ON POLICY parameters
+on_policy : False
+
+# OFF POLICY parameters
+off_policy : True
+update_frequency: 64 #execute a step of training after this number of environment steps
+steps_in_future:  10
+batch_size: 64
+
+discount_factor: 0.99
+initial_variance: 1000
+final_variance: 0.0001
+
+has_continuous_action_space : True

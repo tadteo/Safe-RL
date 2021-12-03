@@ -13,6 +13,7 @@ from datetime import datetime
 from safety_gym.envs.engine import Engine 
 
 from acs_pytorch import OFF_POLICY, ON_POLICY, ACSAgent, Prediction
+from sac_pytorch import SACAgent
 
 from torch.utils.tensorboard import SummaryWriter
 
@@ -66,7 +67,7 @@ def main():
     logging.debug(f'Action size = {action_size}')
 
     logging.debug(f'Creating agent')
-    agent = ACSAgent(state_size=state_size, action_size=action_size, batch_size=BATCH_SIZE, initial_variance=INITIAL_VARIANCE, final_variance=FINAL_VARIANCE, discount_factor = DISCOUNT_FACTOR)
+    agent = SACAgent(state_size=state_size, action_size=action_size, batch_size=BATCH_SIZE, initial_variance=INITIAL_VARIANCE, final_variance=FINAL_VARIANCE, discount_factor = DISCOUNT_FACTOR)
     logging.info(f"Agent created")
 
     current_time = datetime.now().strftime('%b%d_%H-%M-%S')

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from asyncore import write
+import queue
 import numpy as np
 import torch
 import yaml
@@ -13,18 +14,19 @@ from datetime import datetime
 from safety_gym.envs.engine import Engine 
 
 from acs_pytorch import OFF_POLICY, ON_POLICY, ACSAgent, Prediction
+from sac_pytorch import SACAgent
 
 from torch.utils.tensorboard import SummaryWriter
 
 actual_path = os.path.dirname(os.path.realpath(__file__))
 
-config_file =  open(os.path.join(actual_path,'../config/car_goal_hazard.yaml'))
+config_file =  open(os.path.join(actual_path,'../config/car_goal_hazard_inference.yaml'))
 config = yaml.load(config_file, Loader=yaml.FullLoader)
 
 ENV_DICT = config.get('environment')
 RENDER = config.get('render')
 HAS_CONTINUOUS_ACTION_SPACE = config.get('has_continuous_action_space')
-EPOCHS = config.get('epochs')
+EPISODES = config.get('episodes')
 STEPS_PER_EPOCH = config.get('steps_per_epoch')
 UPDATE_FREQUENCY = config.get('update_frequency')
 
@@ -42,8 +44,66 @@ FINAL_VARIANCE = config.get('final_variance')
 DISCOUNT_FACTOR = config.get('discount_factor')
 BATCH_SIZE = config.get('batch_size')
 
+ACTOR_MODEL_WEIGHTS = config.get('actor_model_weights')
+CRITIC_MODEL_WEIGHTS = config.get('critic_model_weights')
+STATE_MODEL_WEIGHTS = config.get('state_model_weights')
+
+STATE_DIVERGENCE_TRESHOLD = config.get('state_divergence_treshold')
 logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
 
+
+def generate_future(agent, observation, steps_in_future):
+    """This function generates the future actions and states 
+    from the given observation for n = steps in future, steps.
+    
+    Args:
+        agent: the agent
+        observation: the current observation
+        steps_in_future: the number of steps in the future
+        
+    Returns:
+        future_actions: the future actions
+        future_states: the future states
+    """
+    
+    future_actions = []
+    future_states = []
+    current_state = observation
+    
+    future_actions.append(agent.select_action(current_state))
+    future_states.append(agent.state_model(current_state, future_actions[-1]))
+    
+    for i in range(steps_in_future):
+        future_actions.append(agent.select_action(future_states[-1]))
+        future_states.append(agent.state_model(future_states[-1], future_actions[-1]))
+
+    future_actions = queue.Queue(future_actions)
+    future_states = queue.Queue(future_states)
+    return future_actions, future_states
+
+def check_prediction(future_states: queue.Queue) -> bool:
+    """This function checks if the future states are safe or not.
+    
+    Args:
+        prediction: the prediction
+        future_states: the future states
+        steps_in_future: the number of steps in the future
+        
+    Returns:
+        correct: if the prediction is correct
+    """
+    
+    is_safe = True
+    while not future_states.empty():
+        future_state = future_states.get()
+        hazards_vector = future_state[16:]
+        
+        for i in hazards_vector:
+            if i > 0.5:
+                is_safe = False
+                break    
+    
+    return is_safe
 
 def main():
     
@@ -52,7 +112,6 @@ def main():
     
     state_size = env.observation_space.shape[0]
     logging.debug(f'State size = {state_size}')
-    
     
     observation = env.reset()
     
@@ -65,22 +124,37 @@ def main():
         action_size = env.action_space.n
     logging.debug(f'Action size = {action_size}')
 
+    #TODO: Load the shape of the model and use it to create the models of the agent.
+    
+    
     logging.debug(f'Creating agent')
-    agent = ACSAgent(state_size=state_size, action_size=action_size, batch_size=BATCH_SIZE, initial_variance=INITIAL_VARIANCE, final_variance=FINAL_VARIANCE, discount_factor = DISCOUNT_FACTOR)
+    agent = SACAgent(state_size=state_size, action_size=action_size, batch_size=BATCH_SIZE, initial_variance=INITIAL_VARIANCE, final_variance=FINAL_VARIANCE, discount_factor = DISCOUNT_FACTOR)
     logging.info(f"Agent created")
-
+    
+    
+    
+    #Loading the weights of the models
+    agent.actor_model.load_state_dict(torch.load(os.path.join(actual_path, ACTOR_MODEL_WEIGHTS)))
+    agent.critic_model.load_state_dict(torch.load(os.path.join(actual_path, CRITIC_MODEL_WEIGHTS)))
+    agent.state_model.load_state_dict(torch.load(os.path.join(actual_path, STATE_MODEL_WEIGHTS)))
+    
+    #Setting up the logger
     current_time = datetime.now().strftime('%b%d_%H-%M-%S')
-    writer = SummaryWriter(log_dir=os.path.join(actual_path,"../runs", current_time + '_' + socket.gethostname()))
-
-    logging.info(f'Starting training')
+    writer = SummaryWriter(log_dir=os.path.join(actual_path,"../runs", "Inference"+current_time + '_' + socket.gethostname()))
+    logging.info(f'Starting evaluation')
     total_number_of_steps = 0
     total_number_of_episodes = 0 
-    for epoch in range(EPOCHS):
-        logging.info(f"Starting epoch {epoch}\n\n")
+    for episode in range(EPISODES):        
+        logging.info(f"Starting episode {episode}\n\n")
         
         observation, episode_steps, episode_distance_traveled = env.reset(), 0, 0
         
-        for t in range(STEPS_PER_EPOCH):
+        actions, states = generate_future(agent,observation,STEPS_IN_FUTURE) 
+        
+        print("actions: ", actions)
+        print("states: ", states)
+        
+        while not env.done:
             if RENDER:
                 env.render()
             
@@ -88,29 +162,21 @@ def main():
             total_number_of_steps += 1
             episode_steps += 1
             
-            predictions = []
-            #predict future:
-            future_observation = observation
-            for i in range(STEPS_IN_FUTURE):
-                future_action = agent.select_action(env, future_observation, exploration_on=True)
-                future_state_predicted = agent.state_model(state_input=future_observation, action_input=future_action)
-                future_distance_predicted = agent.critic_model(future_state_predicted)
-                #check if a path of states to the goal has been found
-                for s in future_state_predicted[:16]:
-                    if s >= 0.9:
-                        print("\n\n\n!!!Found path to goal!!!!\n\n\n")
-                        break
-                predictions.append(Prediction(action=future_action, 
-                                              state=future_state_predicted, 
-                                              distance=future_distance_predicted))
-                
-                future_observation = future_state_predicted
-                
-            # action = agent.select_action(env, observation, exploration_on=True) #equivalent to line below
-            action = predictions[0].action
-            previous_observation = observation
+            observation, reward, done, info = env.step(actions.get()) # Reward not used
             
-            observation, reward, done, info = env.step(action) # Reward not used
+            state_predicted = states.get()
+            if torch.nn.MSELoss(observation, state_predicted) < STATE_DIVERGENCE_TRESHOLD or states.qsize() <= 5:
+                logging.info(f"State divergence: {torch.nn.MSELoss(observation, state_predicted)}")
+                logging.info(f"States queue size: {states.qsize()}")
+                
+                logging.info(f"Recalculating future")
+                
+                actions, states = generate_future(agent,observation,STEPS_IN_FUTURE)
+                
+                if check_prediction(states):
+                    print("Predictions safe")
+                else:
+                    print("Predictions unsafe")                                
             
             # print(f"Observation: {observation}")
             goal_vector = observation[:16]
@@ -132,21 +198,6 @@ def main():
             
             episode_distance_traveled += np.linalg.norm(observation-previous_observation)
             
-            # Memory buffer components
-            #'state', 
-            #'previous_state', 
-            #'action', 
-            #'distance_critic', 
-            #'distance_with_state_prediction',  
-            #'optimal_distance', 
-            #'predictions')
-            agent.memory_buffer.push(observation, #state
-                                     previous_observation, #previous_state 
-                                     action, #action
-                                     0, #distance_critic
-                                     0, #distance_with_state_prediction
-                                     distance_to_goal, #optimal_distance is the distance to goal when you are enough far away from the obstacles
-                                     predictions)
             
             
             
@@ -191,13 +242,7 @@ def main():
                         writer.add_histogram("critic/"+name+"/grad",weight.grad,total_number_of_episodes)
                     
                     # agent.exploration_epsilon = max(MIN_EPSILON, agent.exploration_epsilon/total_number_of_episodes)
-        if epoch % 10 == 0 and epoch != 0:
-            now = datetime.datetime.now()
-            date = now.strftime("%Y%m%d_%H")
-            torch.save(agent.actor_model.state_dict(), './models/'+date+'_actor_model_' + str(epoch) + '.pth')
-            torch.save(agent.critic_model.state_dict(), './models/'+date+'_critic_model_' + str(epoch) + '.pth')
-            torch.save(agent.state_model.state_dict(), './models/'+date+'_state_model_' + str(epoch) + '.pth')
-    writer.close()
+            writer.close()
         
 if __name__ == '__main__':
     main()

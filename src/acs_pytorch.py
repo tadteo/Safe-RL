@@ -77,7 +77,7 @@ class ReplayMemory(object):
 
 class ActorModel(nn.Module):
 
-    def __init__(self, input_size, output_size, sizes=[32,64,128,128,64,32], activation=nn.ReLU()):
+    def __init__(self, input_size, output_size, sizes=[32,128,512,128,32], activation=nn.ReLU()):
         super(ActorModel, self).__init__()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.layers = []
@@ -118,7 +118,7 @@ class CriticModel(nn.Module):
     It is used to predict the distance given in input the state of the environment 
     The input is state, the output is the distance to the goal state
     '''
-    def __init__(self, input_size, output_size=1, sizes=[32,64,128,64,32], activation=nn.ReLU()):
+    def __init__(self, input_size, output_size=1, sizes=[32,128,256,128,64,32], activation=nn.ReLU()):
         super(CriticModel, self).__init__()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.layers = []
@@ -153,7 +153,7 @@ class StateModel(nn.Module):
     It is used to predict the next state given in input the state and the action taken 
     The input is state and the action, the output is the next state
     '''
-    def __init__(self, state_size, action_size, action_layers_sizes=[8,16,32], state_layers_sizes=[32,128,64,32], layers_sizes=[32,64,128, 128, 64,32], activation=nn.Tanh()):
+    def __init__(self, state_size, action_size, action_layers_sizes=[8,16,32], state_layers_sizes=[32,128,64,32], layers_sizes=[32,64,128, 512,128, 64,32], activation=nn.Tanh()):
         super(StateModel, self).__init__()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         
@@ -271,7 +271,7 @@ class ACSAgent:
         self.critic_optimizer = torch.optim.Adam(self.critic_model.parameters(), lr=self.learning_rate)
         self.state_optimizer = torch.optim.Adam(self.state_model.parameters(), lr=self.learning_rate)
 
-    def select_action(self, env, obs, exploration_on = False) -> torch.tensor:
+    def select_action(self, obs, exploration_on = False) -> torch.tensor:
         """Select an action with exploration given the current policy
 
         Args:
@@ -485,7 +485,7 @@ class ACSAgent:
         # print(f"Log prob batch: {log_prob_batch}")
         # print(f"Distance: {distance_list}")
         # criterion_action = nn.MSELoss()
-        loss_actor = (distance_list).sum() #((action-previous_action)**2*(distance_list-previous_distance_list)+distance_list).sum()
+        loss_actor = ((action-previous_action)**2*distance_list).sum() #((action-previous_action)**2*(distance_list-previous_distance_list)+distance_list).sum()
         # loss_actor = +(0.5*buffer_log_prob*distance_with_state_prediction_batch).sum()
         # print(f"LOSS actor = {loss_actor}")
         self.actor_optimizer.zero_grad()
