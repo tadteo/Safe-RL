@@ -1,5 +1,7 @@
 # Configuaration for the goal hazard car environement
 
+experiment_name : "car_goal_hazard_inference"
+
 environment:
   #The environment to use
   robot_base: 'xmls/car.xml'
@@ -14,9 +16,10 @@ environment:
   observe_sensors : False # Disable visualizations of internal sensors for simpler state management    
 
 #model
-actor_model_weights : '../models/actor_model_270.pth'
-critic_model_weights : '../models/critic_model_270.pth'
-state_model_weights : '../models/state_model_270.pth'
+trained_model_path : '../models/CarGoalHazardACS_2021-12-03_17-17-30'
+actor_model_weights : 'actor_model_20.pth'
+critic_model_weights : 'critic_model_20.pth'
+state_model_weights : 'state_model_20.pth'
 
 
 render : True

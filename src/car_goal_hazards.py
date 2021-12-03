@@ -13,6 +13,7 @@ from datetime import datetime
 from safety_gym.envs.engine import Engine 
 
 from acs_pytorch import OFF_POLICY, ON_POLICY, ACSAgent, Prediction
+from utils import *
 
 from torch.utils.tensorboard import SummaryWriter
 
@@ -41,18 +42,21 @@ FINAL_VARIANCE = config.get('final_variance')
 
 DISCOUNT_FACTOR = config.get('discount_factor')
 BATCH_SIZE = config.get('batch_size')
+EXPERIMENT_NAME = config.get('experiment_name')
 
 logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
 
 
 def main():
     
+    experiment_name = generate_exp_name(EXPERIMENT_NAME)
+    logging.info(f"\n\nExperiment: {experiment_name}\n\n")
+    
     #Create the environment
     env = Engine(config=ENV_DICT)
     
     state_size = env.observation_space.shape[0]
     logging.debug(f'State size = {state_size}')
-    
     
     observation = env.reset()
     
@@ -69,9 +73,13 @@ def main():
     agent = ACSAgent(state_size=state_size, action_size=action_size, batch_size=BATCH_SIZE, initial_variance=INITIAL_VARIANCE, final_variance=FINAL_VARIANCE, discount_factor = DISCOUNT_FACTOR)
     logging.info(f"Agent created")
 
+    #save models
+    logging.info(f"Saving models")
+    agent.save_models(experiment_name,0)
+    
     current_time = datetime.now().strftime('%b%d_%H-%M-%S')
     writer = SummaryWriter(log_dir=os.path.join(actual_path,"../runs", current_time + '_' + socket.gethostname()))
-
+    
     logging.info(f'Starting training')
     total_number_of_steps = 0
     total_number_of_episodes = 0 
@@ -92,7 +100,7 @@ def main():
             #predict future:
             future_observation = observation
             for i in range(STEPS_IN_FUTURE):
-                future_action = agent.select_action(env, future_observation, exploration_on=True)
+                future_action = agent.select_action(future_observation, exploration_on=True)
                 future_state_predicted = agent.state_model(state_input=future_observation, action_input=future_action)
                 future_distance_predicted = agent.critic_model(future_state_predicted)
                 #check if a path of states to the goal has been found
@@ -192,11 +200,8 @@ def main():
                     
                     # agent.exploration_epsilon = max(MIN_EPSILON, agent.exploration_epsilon/total_number_of_episodes)
         if epoch % 10 == 0 and epoch != 0:
-            now = datetime.datetime.now()
-            date = now.strftime("%Y%m%d_%H")
-            torch.save(agent.actor_model.state_dict(), './models/'+date+'_actor_model_' + str(epoch) + '.pth')
-            torch.save(agent.critic_model.state_dict(), './models/'+date+'_critic_model_' + str(epoch) + '.pth')
-            torch.save(agent.state_model.state_dict(), './models/'+date+'_state_model_' + str(epoch) + '.pth')
+            agent.save_models(experiment_name,epoch)
+            
     writer.close()
         
 if __name__ == '__main__':

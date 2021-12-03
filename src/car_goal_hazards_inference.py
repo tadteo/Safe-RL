@@ -49,6 +49,10 @@ CRITIC_MODEL_WEIGHTS = config.get('critic_model_weights')
 STATE_MODEL_WEIGHTS = config.get('state_model_weights')
 
 STATE_DIVERGENCE_TRESHOLD = config.get('state_divergence_treshold')
+
+TRAINED_MODEL_PATH = config.get('trained_model_path')
+
+
 logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
 
 
@@ -76,9 +80,18 @@ def generate_future(agent, observation, steps_in_future):
     for i in range(steps_in_future):
         future_actions.append(agent.select_action(future_states[-1]))
         future_states.append(agent.state_model(future_states[-1], future_actions[-1]))
-
-    future_actions = queue.Queue(future_actions)
-    future_states = queue.Queue(future_states)
+    
+    print("Future actions: ", future_actions)
+    print("Future states: ", future_states)
+    
+    tmp = future_actions 
+    future_actions = queue.Queue()
+    [future_actions.put(i) for i in tmp]
+    
+    tmp = future_states
+    future_states = queue.Queue()
+    [future_states.put(i) for i in tmp]
+    
     return future_actions, future_states
 
 def check_prediction(future_states: queue.Queue) -> bool:
@@ -92,17 +105,20 @@ def check_prediction(future_states: queue.Queue) -> bool:
     Returns:
         correct: if the prediction is correct
     """
+    import copy
     
     is_safe = True
+    states = copy.copy(future_states)
     while not future_states.empty():
-        future_state = future_states.get()
+        future_state = states.get()
         hazards_vector = future_state[16:]
         
         for i in hazards_vector:
             if i > 0.5:
                 is_safe = False
+                logging.info("Hazard detected")
                 break    
-    
+    logging.info("Safe")
     return is_safe
 
 def main():
@@ -128,16 +144,19 @@ def main():
     
     
     logging.debug(f'Creating agent')
-    agent = SACAgent(state_size=state_size, action_size=action_size, batch_size=BATCH_SIZE, initial_variance=INITIAL_VARIANCE, final_variance=FINAL_VARIANCE, discount_factor = DISCOUNT_FACTOR)
+    agent = ACSAgent(state_size=state_size, 
+                     action_size=action_size, 
+                     batch_size=BATCH_SIZE, 
+                     initial_variance=INITIAL_VARIANCE, 
+                     final_variance=FINAL_VARIANCE, 
+                     discount_factor = DISCOUNT_FACTOR,
+                     path_for_trained_models= os.path.join(actual_path,TRAINED_MODEL_PATH),
+                     actor_model_weights=ACTOR_MODEL_WEIGHTS,
+                     critic_model_weights=CRITIC_MODEL_WEIGHTS,
+                     state_model_weights=STATE_MODEL_WEIGHTS
+                     )
     logging.info(f"Agent created")
-    
-    
-    
-    #Loading the weights of the models
-    agent.actor_model.load_state_dict(torch.load(os.path.join(actual_path, ACTOR_MODEL_WEIGHTS)))
-    agent.critic_model.load_state_dict(torch.load(os.path.join(actual_path, CRITIC_MODEL_WEIGHTS)))
-    agent.state_model.load_state_dict(torch.load(os.path.join(actual_path, STATE_MODEL_WEIGHTS)))
-    
+
     #Setting up the logger
     current_time = datetime.now().strftime('%b%d_%H-%M-%S')
     writer = SummaryWriter(log_dir=os.path.join(actual_path,"../runs", "Inference"+current_time + '_' + socket.gethostname()))
@@ -151,8 +170,8 @@ def main():
         
         actions, states = generate_future(agent,observation,STEPS_IN_FUTURE) 
         
-        print("actions: ", actions)
-        print("states: ", states)
+        print("actions: ", list(actions.queue))
+        print("states: ", list(states.queue))
         
         while not env.done:
             if RENDER:
@@ -162,22 +181,37 @@ def main():
             total_number_of_steps += 1
             episode_steps += 1
             
+            # print("Action: ", actions.get())
             observation, reward, done, info = env.step(actions.get()) # Reward not used
             
+            if states.empty():
+                raise Exception("States queue is empty")
             state_predicted = states.get()
-            if torch.nn.MSELoss(observation, state_predicted) < STATE_DIVERGENCE_TRESHOLD or states.qsize() <= 5:
-                logging.info(f"State divergence: {torch.nn.MSELoss(observation, state_predicted)}")
+            observation = torch.from_numpy(observation).float()
+            print("State predicted: ", state_predicted.size())
+            print("State actual: ", observation.size())
+            divergence = ((observation-state_predicted)**2).sum()/state_size
+            print("Divergence: ", divergence)
+            if  divergence < STATE_DIVERGENCE_TRESHOLD or states.qsize() <= 5:
+                logging.info(f"State divergence: {divergence}")
                 logging.info(f"States queue size: {states.qsize()}")
                 
                 logging.info(f"Recalculating future")
                 
                 actions, states = generate_future(agent,observation,STEPS_IN_FUTURE)
+                print("actions: ", list(actions.queue))
+                print("states: ", list(states.queue))
+                logging.info(f"Future recalculated")
                 
+                logging.info(f"Checking prediction")
                 if check_prediction(states):
                     print("Predictions safe")
                 else:
-                    print("Predictions unsafe")                                
-            
+                    print("Predictions unsafe")
+                    
+                                   
+                print("actions: ", list(actions.queue))
+                print("states: ", list(states.queue))
             # print(f"Observation: {observation}")
             goal_vector = observation[:16]
             hazards_vector = observation[16:]
@@ -196,53 +230,28 @@ def main():
             logging.debug(f"{episode_steps}. The distance to goal is: {distance_to_goal}")
             
             
-            episode_distance_traveled += np.linalg.norm(observation-previous_observation)
+            # episode_distance_traveled += np.linalg.norm(observation-previous_observation)
             
             
             
             
-            writer.add_scalar("Distances/Distance: distance_to_goal", distance_to_goal, total_number_of_steps)
-            writer.add_scalar("Distances/Distance: distance_to_goal_predicted", agent.critic_model(observation), total_number_of_steps)
-            #Reset the environment and save data
-            if distance_to_goal >= 99:
-                done = True
-            if done or (t == STEPS_PER_EPOCH-1):
+            # writer.add_scalar("Distances/Distance: distance_to_goal", distance_to_goal, total_number_of_steps)
+            # writer.add_scalar("Distances/Distance: distance_to_goal_predicted", agent.critic_model(observation), total_number_of_steps)
+            # #Reset the environment and save data
+            # if distance_to_goal >= 99:
+            #     done = True
+            # if done or (t == STEPS_PER_EPOCH-1):
                 
-                writer.add_scalar("Performances/Episode steps", episode_steps, total_number_of_episodes)
-                writer.add_scalar("Performances/Episode distance", episode_distance_traveled, total_number_of_episodes)
-                total_number_of_episodes +=1
-                observation, episode_distance_traveled, episode_steps = env.reset(), 0, 0
+            #     writer.add_scalar("Performances/Episode steps", episode_steps, total_number_of_episodes)
+            #     writer.add_scalar("Performances/Episode distance", episode_distance_traveled, total_number_of_episodes)
+            #     total_number_of_episodes +=1
+            #     observation, episode_distance_traveled, episode_steps = env.reset(), 0, 0
                 
-                logging.info(f"Starting episode {total_number_of_episodes}")
+            #     logging.info(f"Starting episode {total_number_of_episodes}")
                 
             
-            if ON_POLICY:
-                agent.train_on_policy()
-            if OFF_POLICY:
-                if total_number_of_steps % UPDATE_FREQUENCY == 0:
-                    loss_actor, loss_critic, loss_state = agent.train_off_policy(writer=writer, total_number_of_steps=total_number_of_steps)
-                    writer.add_scalar("Loss/Loss: actor_off_policy", loss_actor, total_number_of_steps)
-                    writer.add_scalar("Loss/Loss: critic_off_policy", loss_critic, total_number_of_steps)
-                    writer.add_scalar("Loss/Loss: state_off_policy", loss_state, total_number_of_steps)
-                
-                    # if(total_number_of_episodes%1==0):
-                    for name,weight in agent.actor_model.named_parameters():
-                        writer.add_histogram(name,weight,total_number_of_episodes)
-                        writer.add_histogram("actor/"+name+"/weight",weight,total_number_of_episodes)
-                        writer.add_histogram("actor/"+name+"/grad",weight.grad,total_number_of_episodes)
-                        
-                    for name,weight in agent.critic_model.named_parameters():
-                        writer.add_histogram(name,weight,total_number_of_episodes)
-                        writer.add_histogram("critic/"+name+"/weight",weight,total_number_of_episodes)
-                        writer.add_histogram("critic/"+name+"/grad",weight.grad,total_number_of_episodes)
-                    
-                    for name,weight in agent.state_model.named_parameters():
-                        writer.add_histogram(name,weight,total_number_of_episodes)
-                        writer.add_histogram("state/"+name+"/weight",weight,total_number_of_episodes)
-                        writer.add_histogram("critic/"+name+"/grad",weight.grad,total_number_of_episodes)
-                    
-                    # agent.exploration_epsilon = max(MIN_EPSILON, agent.exploration_epsilon/total_number_of_episodes)
-            writer.close()
+    
+    writer.close()
         
 if __name__ == '__main__':
     main()

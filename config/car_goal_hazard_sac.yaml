@@ -1,5 +1,7 @@
 # Configuaration for the goal hazard car environement
 
+experiment_name : 'car_goal_hazard_sac'
+
 environment:
   #The environment to use
   robot_base: 'xmls/car.xml'

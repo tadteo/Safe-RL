@@ -77,16 +77,16 @@ class ReplayMemory(object):
 
 class ActorModel(nn.Module):
 
-    def __init__(self, input_size, output_size, sizes=[32,128,512,128,32], activation=nn.ReLU()):
+    def __init__(self, input_size, output_size, layers_sizes=[32,128,512,128,32], activation=nn.ReLU()):
         super(ActorModel, self).__init__()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.layers = []
-        self.layers.append(nn.Linear(input_size, sizes[0]))
+        self.layers.append(nn.Linear(input_size, layers_sizes[0]))
         self.layers.append(activation)
-        for i in range(1,len(sizes)):
-            self.layers.append(nn.Linear(sizes[i-1],sizes[i]))
+        for i in range(1,len(layers_sizes)):
+            self.layers.append(nn.Linear(layers_sizes[i-1],layers_sizes[i]))
             self.layers.append(activation)
-        self.layers.append(nn.Linear(sizes[-1],output_size))
+        self.layers.append(nn.Linear(layers_sizes[-1],output_size))
         
         if has_continuous_action_space :
             pass
@@ -99,7 +99,6 @@ class ActorModel(nn.Module):
         print("Actor Model structure: ", self.net, "\n\n")
         # for name, param in self.net.named_parameters():
         #     print(f"Layer: {name} | Size: {param.size()} | Values : {param[:2]} \n")
-
 
     def forward(self, input):
         if(type(input) == np.ndarray):
@@ -118,16 +117,16 @@ class CriticModel(nn.Module):
     It is used to predict the distance given in input the state of the environment 
     The input is state, the output is the distance to the goal state
     '''
-    def __init__(self, input_size, output_size=1, sizes=[32,128,256,128,64,32], activation=nn.ReLU()):
+    def __init__(self, input_size, output_size=1, layers_sizes=[32,128,256,128,64,32], activation=nn.ReLU()):
         super(CriticModel, self).__init__()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.layers = []
-        self.layers.append(nn.Linear(input_size, sizes[0]))
+        self.layers.append(nn.Linear(input_size, layers_sizes[0]))
         self.layers.append(activation)
-        for i in range(1,len(sizes)):
-            self.layers.append(nn.Linear(sizes[i-1],sizes[i]))
+        for i in range(1,len(layers_sizes)):
+            self.layers.append(nn.Linear(layers_sizes[i-1],layers_sizes[i]))
             self.layers.append(activation)
-        self.layers.append(nn.Linear(sizes[-1],output_size))
+        self.layers.append(nn.Linear(layers_sizes[-1],output_size))
         # self.layers.append(nn.Sigmoid())
         
         self.net = nn.Sequential(*self.layers)
@@ -226,7 +225,11 @@ class ACSAgent:
                  action_size, 
                  batch_size, 
                  initial_variance, final_variance, 
-                 discount_factor, 
+                 discount_factor,
+                 path_for_trained_models=None,
+                 actor_model_weights=None,
+                 critic_model_weights=None,
+                 state_model_weights=None,
                  id_nr=0):
         self.state_size = state_size
         self.action_size = action_size
@@ -259,18 +262,71 @@ class ACSAgent:
             print("Self.action_size: ", self.action_size)
             self.action_covariance_matrix = torch.diag(torch.full((self.action_size), self.actual_variance, dtype=torch.float, device=self.device))
             # print("Action Covariance Matrix: ", self.action_covariance_matrix)
-        #Create networks
-        self.actor_model = ActorModel(input_size=self.state_size,output_size=self.action_size[0])
+        
+        if path_for_trained_models == None:
+            #Create networks
+            self.actor_model = ActorModel(input_size=self.state_size,output_size=self.action_size[0])
+            self.critic_model = CriticModel(input_size=self.state_size,output_size=(1))
+            self.state_model = StateModel(state_size=self.state_size,action_size=self.action_size[0])
+        else:
+            import os
+            import json
+            with open(path_for_trained_models+"/model_sizes.json", 'r') as f:
+                data = json.load(f)
+            #Create networks
+            self.actor_model = ActorModel(input_size=self.state_size,output_size=self.action_size[0], layers_sizes=data['actor_model'][:-1])
+            self.critic_model = CriticModel(input_size=self.state_size,output_size=(1), layers_sizes=data['critic_model'][:-1])
+            self.state_model = StateModel(state_size=self.state_size,action_size=self.action_size[0], layers_sizes=data['state_model'][:-1])
+            
+            print(os.path.join(path_for_trained_models, actor_model_weights))
+            #Loading the weights of the models
+            if(actor_model_weights != None):
+                self.actor_model.load_state_dict(torch.load(os.path.join(path_for_trained_models, actor_model_weights)))
+                self.actor_model.eval()
+            if(critic_model_weights != None):
+                self.critic_model.load_state_dict(torch.load(os.path.join(path_for_trained_models, critic_model_weights)))
+                self.critic_model.eval()
+            if(state_model_weights != None):
+                self.state_model.load_state_dict(torch.load(os.path.join(path_for_trained_models, state_model_weights)))        
+                self.state_model.eval()
+                
         self.actor_model = self.actor_model.to(self.device)
-        self.critic_model = CriticModel(input_size=self.state_size,output_size=(1))
         self.critic_model = self.critic_model.to(self.device)
-        self.state_model = StateModel(state_size=self.state_size,action_size=self.action_size[0])
         self.state_model = self.state_model.to(self.device)
-
         self.actor_optimizer = torch.optim.Adam(self.actor_model.parameters(), lr=self.learning_rate)
         self.critic_optimizer = torch.optim.Adam(self.critic_model.parameters(), lr=self.learning_rate)
         self.state_optimizer = torch.optim.Adam(self.state_model.parameters(), lr=self.learning_rate)
 
+    def save_models(self, experiment_name, epoch):
+        import os
+        import json
+        
+        path = f"../models/{experiment_name}/"
+        if not os.path.isdir(path):
+            os.makedirs(path)
+        #Save the dimensions of the models
+        size_actor = []
+        for l in self.actor_model.layers:
+            if l.__class__.__name__ == "Linear":
+                    size_actor.append(int(l.out_features))
+        size_critic = []
+        for l in self.critic_model.layers:
+            if l.__class__.__name__ == "Linear":
+                    size_critic.append(int(l.out_features))
+        size_state = []
+        for l in self.state_model.layers:
+            if l.__class__.__name__ == "Linear":
+                    size_state.append(int(l.out_features))
+        
+        data = {"actor_model": size_actor, "critic_model": size_critic, "state_model": size_state}
+        with open(os.path.join(path,f'model_sizes.json'),'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+        
+        #Save parameter of the models
+        torch.save(self.actor_model.state_dict(), os.path.join(path,f'actor_model_{epoch}.pth'))
+        torch.save(self.critic_model.state_dict(), os.path.join(path,f'critic_model_{epoch}.pth'))
+        torch.save(self.state_model.state_dict(), os.path.join(path,f'state_model_{epoch}.pth'))
+        
     def select_action(self, obs, exploration_on = False) -> torch.tensor:
         """Select an action with exploration given the current policy
 
@@ -307,7 +363,7 @@ class ACSAgent:
                 dist = Categorical(action_probs)
                 action = dist.sample()
         
-        action_logprob = dist.log_prob(action)
+                # action_logprob = dist.log_prob(action)
             
         return action.cpu().detach().numpy()
     
