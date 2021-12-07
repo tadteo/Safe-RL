@@ -17,14 +17,14 @@ environment:
 
 #model
 trained_model_path : '../models/CarGoalHazardACS_2021-12-07_15-52-41'
-actor_model_weights : 'actor_model_40.pth'
-critic_model_weights : 'critic_model_40.pth'
-state_model_weights : 'state_model_40.pth'
+actor_model_weights : 'actor_model_20.pth'
+critic_model_weights : 'critic_model_20.pth'
+state_model_weights : 'state_model_20.pth'
 
 
 render : True
 episodes : 50
-steps_per_epoch : 5000 #10000
+steps_per_epoch : 10000
 
 #agent parameters
 min_epsilon: 0.01

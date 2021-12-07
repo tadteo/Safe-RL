@@ -24,9 +24,9 @@ from models.state_model import StateModel
 class ACSAgent:
     def __init__(self,state_size, 
                  action_size,
-                 batch_size, 
-                 initial_variance, final_variance, 
-                 discount_factor,
+                 batch_size=32, 
+                 initial_variance=None, final_variance=None, 
+                 discount_factor=None,
                  has_continuous_action_space=True,
                  path_for_trained_models=None,
                  actor_model_weights=None,
@@ -58,8 +58,6 @@ class ACSAgent:
         self.has_continuous_action_space = has_continuous_action_space
         self.action_size = action_size
         print("Self.action_size: ", self.action_size)
-        self.action_covariance_matrix = torch.diag(torch.full((self.action_size), self.actual_variance, dtype=torch.float, device=self.device))
-        # print("Action Covariance Matrix: ", self.action_covariance_matrix)
         
         if path_for_trained_models == None:
             #Create networks
@@ -139,7 +137,6 @@ class ACSAgent:
                 action_dist = self.actor_model(obs)
                 # logging.debug(f"Action mean: {action_mean}")
                 # action_raw = action_mean
-                # dist = MultivariateNormal(action_mean, self.action_covariance_matrix)
                 action = action_dist.rsample()
                 # action = action_mean
             else:
@@ -152,7 +149,7 @@ class ACSAgent:
         else:
             if self.has_continuous_action_space:
                 action_dist = self.actor_model(obs)
-                action = action_dist
+                action = action_dist.mean
             else:
                 # logging.debug(f"The Observation type is: {observation}")
                 action_probs = self.actor_model(obs)
@@ -179,7 +176,6 @@ class ACSAgent:
         #         target_Q[i] += (future_distance_predicted.item() - target_Q[i])
         
         # action_mean = self.actor_model(state_batch)
-        # dist = MultivariateNormal(action_mean, self.action_covariance_matrix)
         # next_action_batch = dist.rsample()
         # log_prob = dist.log_prob(next_action_batch).sum(-1,keepdim=True)
         # print("Log Prob: ", log_prob)
@@ -325,15 +321,8 @@ class ACSAgent:
         loss_actor.backward()
         self.actor_optimizer.step()
         
-        
-        if self.actual_variance > self.final_variance:
-            self.actual_variance = self.actual_variance - 0.05*self.actual_variance
-            if self.actual_variance < self.final_variance:
-                self.actual_variance = self.final_variance
-            self.action_covariance_matrix = torch.diag(torch.full((self.action_size), self.actual_variance, dtype=torch.float, device=self.device))
-        
+
         writer.add_scalar("Variance", self.actual_variance, total_number_of_steps)
-        logging.info("Action covariance matrix: {}".format(self.action_covariance_matrix))
         
         logging.info(f"Training step completed, returning")
         return loss_actor.item(), loss_critic.item(), loss_state.item()

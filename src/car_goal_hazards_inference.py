@@ -13,7 +13,7 @@ from datetime import datetime
     
 from safety_gym.envs.engine import Engine 
 
-from acs_pytorch import OFF_POLICY, ON_POLICY, ACSAgent, Prediction
+from acs_pytorch import ACSAgent
 from sac_pytorch import SACAgent
 
 from torch.utils.tensorboard import SummaryWriter
@@ -82,7 +82,7 @@ def generate_future(agent, observation, steps_in_future):
         future_states.append(agent.state_model(future_states[-1], future_actions[-1]))
     
     print("Future actions: ", future_actions)
-    print("Future states: ", future_states)
+    # print("Future states: ", future_states)
     
     tmp = future_actions 
     future_actions = queue.Queue()
@@ -187,21 +187,21 @@ def main():
             if states.empty():
                 raise Exception("States queue is empty")
             state_predicted = states.get()
-            observation = torch.from_numpy(observation).float()
+            observation = torch.from_numpy(observation).float().to(agent.device)
             print("State predicted: ", state_predicted.size())
             print("State actual: ", observation.size())
             divergence = ((observation-state_predicted)**2).sum()/state_size
             print("Divergence: ", divergence)
             if  divergence < STATE_DIVERGENCE_TRESHOLD or states.qsize() <= 5:
-                logging.info(f"State divergence: {divergence}")
-                logging.info(f"States queue size: {states.qsize()}")
+                # logging.info(f"State divergence: {divergence}")
+                # logging.info(f"States queue size: {states.qsize()}")
                 
                 logging.info(f"Recalculating future")
                 
                 actions, states = generate_future(agent,observation,STEPS_IN_FUTURE)
-                print("actions: ", list(actions.queue))
-                print("states: ", list(states.queue))
-                logging.info(f"Future recalculated")
+                # print("actions: ", list(actions.queue))
+                # print("states: ", list(states.queue))
+                # logging.info(f"Future recalculated")
                 
                 logging.info(f"Checking prediction")
                 if check_prediction(states):
@@ -211,7 +211,7 @@ def main():
                     
                                    
                 print("actions: ", list(actions.queue))
-                print("states: ", list(states.queue))
+                # print("states: ", list(states.queue))
             # print(f"Observation: {observation}")
             goal_vector = observation[:16]
             hazards_vector = observation[16:]
