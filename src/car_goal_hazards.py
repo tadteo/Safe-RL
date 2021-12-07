@@ -12,7 +12,7 @@ from datetime import datetime
     
 from safety_gym.envs.engine import Engine 
 
-from acs_pytorch import OFF_POLICY, ON_POLICY, ACSAgent, Prediction
+from acs_pytorch import ACSAgent
 from utils import *
 
 from torch.utils.tensorboard import SummaryWriter
@@ -135,6 +135,7 @@ def main():
                     distance_to_goal += 1/(1-max(hazards_vector))
             
             # distance_to_goal = 1-(1/(1+distance_to_goal))
+            if episode_steps%100 == 0:
             logging.debug(f"{episode_steps}. The distance to goal is: {distance_to_goal}")
             
             
