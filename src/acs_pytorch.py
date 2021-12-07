@@ -2,6 +2,7 @@
 
 import argparse
 import logging, sys
+from traceback import print_tb
 import gym
 import safety_gym
 import numpy as np
@@ -149,6 +150,7 @@ class ACSAgent:
         else:
             if self.has_continuous_action_space:
                 action_dist = self.actor_model(obs)
+                print("Action dist: ", action_dist.mean, action_dist.stddev)
                 action = action_dist.mean
             else:
                 # logging.debug(f"The Observation type is: {observation}")
@@ -196,8 +198,62 @@ class ACSAgent:
         
         return loss_critic
     
-    def train_actor(self, obs, action, reward, next_obs, done):
-        pass
+    def train_actor(self, previous_obs, obs,  action):
+        
+        action_dist = self.actor_model(obs)
+        previous_action_dist = self.actor_model(previous_obs)
+  
+        #calculate the log_prob of the batch
+        log_prob = action_dist.log_prob(action)
+        # print(f"Log prob: {log_prob}")
+                
+        state_prediction = self.state_model(obs, action)
+        
+        state_prediction = state_prediction
+        distance_list = []
+        #calculate the distance
+        for i in range(self.batch_size):
+            goal_vector = obs[i][:16]
+            hazards_vector = obs[i][16:]
+            if max(goal_vector) >= 0.9:
+                distance_to_goal = 0
+            else:
+                distance_to_goal = 1/max(max(goal_vector),0.001) #(1-max(observation[(-3*16):(-2*16)]))*
+                if max(hazards_vector) >= 0.5: #observation hazard
+                    distance_to_goal += 1/(1-max(hazards_vector))
+            distance_list.append(distance_to_goal.item())
+        
+        distance_list = torch.tensor(distance_list).to(self.device)
+        
+        previous_state_prediction = self.state_model(previous_obs, previous_action_dist.rsample())        
+        previous_distance_list = []
+        
+        for i in range(self.batch_size):
+            goal_vector = obs[i][:16]
+            hazards_vector = obs[i][16:]
+            # print(f"Goal vector: {goal_vector}")
+            # print(f"Hazards vector: {hazards_vector}")
+            if max(goal_vector) >= 0.9:
+                distance_to_goal = 0
+            else:
+                distance_to_goal = 1/max(max(goal_vector),0.001) #(1-max(observation[(-3*16):(-2*16)]))*
+                if max(hazards_vector) >= 0.5: #observation hazard
+                    distance_to_goal += 1/(1-max(hazards_vector))
+            previous_distance_list.append(distance_to_goal.item())
+        
+        previous_distance_list = torch.tensor(previous_distance_list).to(self.device)
+        
+        
+        # loss_actor = (0.5*log_prob*min_actor_Q).sum() #+(0.5*buffer_log_prob*distance_with_state_prediction_batch).sum()
+        print("Distance list: ", distance_list)
+        print("Log prob: ", log_prob)
+        loss_actor = ((1-log_prob)*distance_list).sum() / self.batch_size
+        
+        self.actor_optimizer.zero_grad()
+        loss_actor.backward()
+        self.actor_optimizer.step()
+        
+        return loss_actor
     
     def train_state(self, previous_state_batch, state_batch, action_batch):
         #Compute states and predicted states
@@ -232,8 +288,8 @@ class ACSAgent:
         # previous_state_batch = torch.tensor(mini_batch.previous_state).float().to(self.device)
         # previous_state_batch = torch.stack(mini_batch_previous_state).to(self.device).float()
         
-        action_batch = np.array(mini_batch.action)        
-        action_batch = torch.tensor(mini_batch.action).float().to(self.device)
+        tmp = np.array(mini_batch.action)        
+        action_batch = torch.tensor(tmp).float().to(self.device)
         # action_batch = torch.stack(mini_batch.action).to(self.device).float()
         # print("Action Batch: ", action_batch.shape)
         distance_critic_batch = torch.tensor(mini_batch.distance_critic).float().to(self.device)
@@ -252,74 +308,7 @@ class ACSAgent:
         
         loss_state = self.train_state(previous_state_batch, state_batch, action_batch)
         
-        #Calculate the distribution of the action based on the state and caluculate the minimum value from the n samples of the distribution
-        #Use the minimum and the original action value to calculate the loss
-        
-        action_dist = self.actor_model(state_batch)
-        previous_action_dist = self.actor_model(previous_state_batch)
-        # action = dist.rsample()
-        # log_prob = dist.log_prob(action).sum(-1,keepdim=True)
-        # print("Action: ", action_dist)
-        # print("Action Batch: ", action_batch)
-        #calculate the log_prob of the batch
-        log_prob_batch = action_dist.log_prob(action_batch)
-        # print(f"Log prob: {log_prob_batch}")
-        
-        # log_prob_batch = torch.tensor(log_prob_batch, device=self.device)
-        
-        state_prediction = self.state_model(state_batch, action_dist.rsample())
-        
-        state_prediction = state_prediction
-        distance_list = []
-        #calculate the distance
-        for i in range(self.batch_size):
-            goal_vector = state_prediction[i][:16]
-            hazards_vector = state_prediction[i][16:]
-            # print(f"Goal vector: {goal_vector}")
-            # print(f"Hazards vector: {hazards_vector}")
-            if max(goal_vector) >= 0.9:
-                distance_to_goal = 0
-            else:
-                distance_to_goal = 1/max(max(goal_vector),0.001) #(1-max(observation[(-3*16):(-2*16)]))*
-                if max(hazards_vector) >= 0.5: #observation hazard
-                    distance_to_goal += 1/(1-max(hazards_vector))
-            distance_list.append(distance_to_goal.item())
-        
-        distance_list = torch.tensor(distance_list).to(self.device)
-        
-        previous_state_prediction = self.state_model(previous_state_batch, previous_action_dist.rsample())        
-        previous_distance_list = []
-        
-        for i in range(self.batch_size):
-            goal_vector = state_batch[i][:16]
-            hazards_vector = state_batch[i][16:]
-            # print(f"Goal vector: {goal_vector}")
-            # print(f"Hazards vector: {hazards_vector}")
-            if max(goal_vector) >= 0.9:
-                distance_to_goal = 0
-            else:
-                distance_to_goal = 1/max(max(goal_vector),0.001) #(1-max(observation[(-3*16):(-2*16)]))*
-                if max(hazards_vector) >= 0.5: #observation hazard
-                    distance_to_goal += 1/(1-max(hazards_vector))
-            previous_distance_list.append(distance_to_goal.item())
-        
-        previous_distance_list = torch.tensor(previous_distance_list).to(self.device)
-        
-        
-        # loss_actor = (0.5*log_prob*min_actor_Q).sum() #+(0.5*buffer_log_prob*distance_with_state_prediction_batch).sum()
-        alpha = 0.01
-        
-        loss_actor = (log_prob_batch*distance_list).sum() / self.batch_size
-        
-        # distance_list = distance_list.reshape(1,-1).t().to(self.device)
-        # previous_distance_list = previous_distance_list.reshape(1,-1).t().to(self.device)
-        # print(f"Log prob batch: {log_prob_batch}")
-        # print(f"Distance: {distance_list}")
-        # loss_actor = +(0.5*buffer_log_prob*distance_with_state_prediction_batch).sum()
-        # print(f"LOSS actor = {loss_actor}")
-        self.actor_optimizer.zero_grad()
-        loss_actor.backward()
-        self.actor_optimizer.step()
+        loss_actor = self.train_actor(previous_state_batch, state_batch, action_batch)
         
 
         writer.add_scalar("Variance", self.actual_variance, total_number_of_steps)

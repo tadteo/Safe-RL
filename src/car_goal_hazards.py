@@ -136,7 +136,7 @@ def main():
             
             # distance_to_goal = 1-(1/(1+distance_to_goal))
             if episode_steps%100 == 0:
-            logging.debug(f"{episode_steps}. The distance to goal is: {distance_to_goal}")
+                logging.debug(f"{episode_steps}. The distance to goal is: {distance_to_goal}")
             
             
             episode_distance_traveled += np.linalg.norm(observation-previous_observation)
