@@ -45,14 +45,14 @@ class ActorModel(nn.Module):
         super(ActorModel, self).__init__()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.layers = []
-        self.layers.append(nn.Linear(input_size, layers_sizes[0]))
+        self.layers.append(nn.Linear(input_size*2, layers_sizes[0]))
         self.layers.append(activation)
         for i in range(1,len(layers_sizes)):
             self.layers.append(nn.Linear(layers_sizes[i-1],layers_sizes[i]))
             self.layers.append(activation)
         self.layers.append(nn.Linear(layers_sizes[-1],2*output_size))
 
-        # self.layers.append(nn.Tanh())
+        self.layers.append(nn.Tanh())
         self.net = nn.Sequential(*self.layers)
         
         self.outputs = dict()

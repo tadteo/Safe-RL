@@ -77,8 +77,7 @@ def main():
     logging.info(f"Saving models")
     agent.save_models(experiment_name,0)
     
-    current_time = datetime.now().strftime('%b%d_%H-%M-%S')
-    writer = SummaryWriter(log_dir=os.path.join(actual_path,"../runs", current_time + '_' + socket.gethostname()))
+    writer = SummaryWriter(log_dir=os.path.join(actual_path,"../runs", experiment_name + '_' + socket.gethostname()))
     
     logging.info(f'Starting training')
     total_number_of_steps = 0
@@ -87,7 +86,8 @@ def main():
         logging.info(f"Starting epoch {epoch}\n\n")
         
         observation, episode_steps, episode_distance_traveled = env.reset(), 0, 0
-        
+        distance_from_previous_log = 0
+        obs = np.concatenate((observation,observation), axis=0)
         for t in range(STEPS_PER_EPOCH):
             if RENDER:
                 env.render()
@@ -96,27 +96,30 @@ def main():
             total_number_of_steps += 1
             episode_steps += 1
             
+            # #predict future:
             predictions = []
-            #predict future:
-            future_observation = observation
-            for i in range(STEPS_IN_FUTURE):
-                future_action = agent.select_action(future_observation, exploration_on=True)
-                future_state_predicted = agent.state_model(state_input=future_observation, action_input=future_action)
-                future_distance_predicted = agent.critic_model(future_state_predicted)
-                #check if a path of states to the goal has been found
-                for s in future_state_predicted[:16]:
-                    if s >= 0.9:
-                        print("\n\n\n!!!Found path to goal!!!!\n\n\n")
-                        break
-                predictions.append(Prediction(action=future_action, 
-                                              state=future_state_predicted, 
-                                              distance=future_distance_predicted))
+            
+            # future_observation = observation
+            # for i in range(STEPS_IN_FUTURE):
+            #     future_action = agent.select_action(future_observation, exploration_on=True)
+            #     future_state_predicted = agent.state_model(state_input=future_observation, action_input=future_action)
+            #     future_distance_predicted = agent.critic_model(future_state_predicted)
+            #     #check if a path of states to the goal has been found
+            #     for s in future_state_predicted[:16]:
+            #         if s >= 0.9:
+            #             print("\n\n\n!!!Found path to goal!!!!\n\n\n")
+            #             break
+            #     predictions.append(Prediction(action=future_action, 
+            #                                   state=future_state_predicted, 
+            #                                   distance=future_distance_predicted))
                 
-                future_observation = future_state_predicted
-                
-            # action = agent.select_action(env, observation, exploration_on=True) #equivalent to line below
-            action = predictions[0].action
+            #     future_observation = future_state_predicted
+            
             previous_observation = observation
+            previous_obs = obs
+            obs = np.concatenate((observation, previous_observation), axis=0)
+            action = agent.select_action(obs, exploration_on=True) #equivalent to line below
+            # action = predictions[0].action
             
             observation, reward, done, info = env.step(action) # Reward not used
             
@@ -124,19 +127,16 @@ def main():
             goal_vector = observation[:16]
             hazards_vector = observation[16:]
             
-            #calculate the distance
-            if max(goal_vector) >= 0.8:
-                distance_to_goal = 0
-                optimal_distance = 0
+            if done:
+                distance = 0
             else:
-                distance_to_goal = 1/max(max(goal_vector),0.0001) #(1-max(observation[(-3*16):(-2*16)]))*
-                optimal_distance = 1/max(max(goal_vector),0.0001)
-                if max(hazards_vector) >= 0.5: #observation hazard
-                    distance_to_goal += 1/(1-max(hazards_vector))
+                distance = calculate_distance(previous_observation, observation)
             
             # distance_to_goal = 1-(1/(1+distance_to_goal))
+            distance_from_previous_log = distance_from_previous_log + distance
             if episode_steps%100 == 0:
-                logging.debug(f"{episode_steps}. The distance to goal is: {distance_to_goal}")
+                logging.debug(f"{episode_steps}. The distance to goal is: {distance_from_previous_log}")
+                distance_from_previous_log = 0
             
             
             episode_distance_traveled += np.linalg.norm(observation-previous_observation)
@@ -149,20 +149,20 @@ def main():
             #'distance_with_state_prediction',  
             #'optimal_distance', 
             #'predictions')
-            agent.memory_buffer.push(observation, #state
-                                     previous_observation, #previous_state 
+            agent.memory_buffer.push(obs, #state
+                                     previous_obs, #previous_state 
                                      action, #action
                                      0, #distance_critic
                                      0, #distance_with_state_prediction
-                                     distance_to_goal, #optimal_distance is the distance to goal when you are enough far away from the obstacles
+                                     distance, #optimal_distance is the distance to goal when you are enough far away from the obstacles
                                      predictions)
             
             
             
-            writer.add_scalar("Distances/Distance: distance_to_goal", distance_to_goal, total_number_of_steps)
-            writer.add_scalar("Distances/Distance: distance_to_goal_predicted", agent.critic_model(observation), total_number_of_steps)
+            writer.add_scalar("Distances/Distance: distance", distance, total_number_of_steps)
+            writer.add_scalar("Distances/Distance: distance_predicted", agent.critic_model(observation), total_number_of_steps)
             #Reset the environment and save data
-            if distance_to_goal >= 99:
+            if distance >= 99:
                 done = True
             if done or (t == STEPS_PER_EPOCH-1):
                 

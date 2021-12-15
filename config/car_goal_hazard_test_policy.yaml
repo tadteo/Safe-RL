@@ -16,10 +16,10 @@ environment:
   observe_sensors : False # Disable visualizations of internal sensors for simpler state management    
 
 #model
-trained_model_path : '../models/CarGoalHazardACS_2021-12-07_15-52-41'
-actor_model_weights : 'actor_model_20.pth'
-critic_model_weights : 'critic_model_20.pth'
-state_model_weights : 'state_model_20.pth'
+trained_model_path : '../models/car_goal_hazard_sac_2021-12-14_20-57-24'
+actor_model_weights : 'actor_model_90.pth'
+critic_model_weights : 'critic_model_90.pth'
+state_model_weights : 'state_model_90.pth'
 
 
 render : True
@@ -41,8 +41,8 @@ steps_in_future:  1
 batch_size: 64
 
 discount_factor: 0.99
-initial_variance: 1000
-final_variance: 0.0001
+initial_variance: 100
+final_variance: 0.01
 
 has_continuous_action_space : True
 

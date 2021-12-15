@@ -16,10 +16,10 @@ environment:
   observe_sensors : False # Disable visualizations of internal sensors for simpler state management    
 
 #model
-trained_model_path : '../models/CarGoalHazardACS_2021-12-07_15-52-41'
-actor_model_weights : 'actor_model_40.pth'
-critic_model_weights : 'critic_model_40.pth'
-state_model_weights : 'state_model_40.pth'
+trained_model_path : '../models/CarGoalHazardACS_2021-12-14_13-24-08/'
+actor_model_weights : 'actor_model_90.pth'
+critic_model_weights : 'critic_model_90.pth'
+state_model_weights : 'state_model_90.pth'
 
 
 render : True

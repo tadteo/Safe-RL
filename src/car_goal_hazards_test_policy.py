@@ -20,7 +20,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 actual_path = os.path.dirname(os.path.realpath(__file__))
 
-config_file =  open(os.path.join(actual_path,'../config/car_goal_hazard_inference.yaml'))
+config_file =  open(os.path.join(actual_path,'../config/car_goal_hazard_test_policy.yaml'))
 config = yaml.load(config_file, Loader=yaml.FullLoader)
 
 ENV_DICT = config.get('environment')

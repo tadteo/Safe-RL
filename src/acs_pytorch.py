@@ -133,12 +133,18 @@ class ACSAgent:
         """
         if (type(obs) ==np.ndarray):
             obs = torch.from_numpy(obs).float().to(self.device)
+        
         if exploration_on:
             if self.has_continuous_action_space:
                 action_dist = self.actor_model(obs)
                 # logging.debug(f"Action mean: {action_mean}")
                 # action_raw = action_mean
+                # if self.actual_variance >= self.final_variance :
+                #     action_dist_exploration = torch.distributions.Normal(action_dist.mean, action_dist.stddev*self.actual_variance)
+                #     action = action_dist_exploration.rsample()
+                # else:
                 action = action_dist.rsample()
+                    
                 # action = action_mean
             else:
                 # logging.debug(f"The Observation type is: {observation}")
@@ -150,7 +156,7 @@ class ACSAgent:
         else:
             if self.has_continuous_action_space:
                 action_dist = self.actor_model(obs)
-                print("Action dist: ", action_dist.mean, action_dist.stddev)
+                # print("Action dist: ", action_dist.mean, action_dist.stddev)
                 action = action_dist.mean
             else:
                 # logging.debug(f"The Observation type is: {observation}")
@@ -164,12 +170,12 @@ class ACSAgent:
             
         return action.cpu().detach().numpy()
     
-    def train_critic(self, writer, total_number_of_steps, previous_state_batch, state_batch, predictions_batch, optimal_distance_batch):
+    def train_critic(self, writer, total_number_of_steps, previous_state_batch, state_batch, predictions_batch, distance_batch):
         # #Compute Q values
         # alpha = 0.2
         # gamma = 0.99
         # # print(f"State batch: {state_batch.shape}")
-        # target_Q = optimal_distance_batch
+        # target_Q = distance_batch
         # # print(f"Q: {Q.size}, {Q}")
         # for i in range(self.batch_size):
 
@@ -182,7 +188,7 @@ class ACSAgent:
         # log_prob = dist.log_prob(next_action_batch).sum(-1,keepdim=True)
         # print("Log Prob: ", log_prob)
         # target_V = self.critic_model(state_batch) - alpha * log_prob
-        # target_Q = optimal_distance_batch + self.discount_factor * target_V
+        # target_Q = distance_batch + self.discount_factor * target_V
         # target_Q = target_Q.detach()
         # target_Q = target_V.detach()
         
@@ -191,63 +197,35 @@ class ACSAgent:
             # writer.add_scalar('Q/Target Q', target_Q.mean().item(), total_number_of_steps)
         criterion_critic = nn.MSELoss()
         # loss_critic = criterion_critic(self.critic_model(previous_state_batch),target_Q) #TODO: Extract also the distances in the predictions t have  a mix of distances with and without predictions
-        loss_critic = criterion_critic(self.critic_model(state_batch),optimal_distance_batch) #correct
+        loss_critic = criterion_critic(self.critic_model(state_batch),distance_batch) #correct
         self.critic_optimizer.zero_grad()
         loss_critic.backward()
         self.critic_optimizer.step()
         
         return loss_critic
     
-    def train_actor(self, previous_obs, obs,  action):
+    def train_actor(self, previous_obs, obs,  action, Q):
         
         action_dist = self.actor_model(obs)
         previous_action_dist = self.actor_model(previous_obs)
   
         #calculate the log_prob of the batch
-        log_prob = action_dist.log_prob(action)
+        # log_prob = action_dist.log_prob(action)
+        action_tilde = torch.tanh(action_dist.mean + action_dist.stddev*torch.randn(action_dist.mean.shape))
+        log_prob_tilde = action_dist.log_prob(action_tilde).sum(-1,keepdim=True)
+
         # print(f"Log prob: {log_prob}")
                 
-        state_prediction = self.state_model(obs, action)
-        
-        state_prediction = state_prediction
         distance_list = []
         #calculate the distance
         for i in range(self.batch_size):
-            goal_vector = obs[i][:16]
-            hazards_vector = obs[i][16:]
-            if max(goal_vector) >= 0.9:
-                distance_to_goal = 0
-            else:
-                distance_to_goal = 1/max(max(goal_vector),0.001) #(1-max(observation[(-3*16):(-2*16)]))*
-                if max(hazards_vector) >= 0.5: #observation hazard
-                    distance_to_goal += 1/(1-max(hazards_vector))
-            distance_list.append(distance_to_goal.item())
+            distance_list.append(calculate_distance(previous_obs[i], obs[i]))
         
         distance_list = torch.tensor(distance_list).to(self.device)
         
-        previous_state_prediction = self.state_model(previous_obs, previous_action_dist.rsample())        
-        previous_distance_list = []
-        
-        for i in range(self.batch_size):
-            goal_vector = obs[i][:16]
-            hazards_vector = obs[i][16:]
-            # print(f"Goal vector: {goal_vector}")
-            # print(f"Hazards vector: {hazards_vector}")
-            if max(goal_vector) >= 0.9:
-                distance_to_goal = 0
-            else:
-                distance_to_goal = 1/max(max(goal_vector),0.001) #(1-max(observation[(-3*16):(-2*16)]))*
-                if max(hazards_vector) >= 0.5: #observation hazard
-                    distance_to_goal += 1/(1-max(hazards_vector))
-            previous_distance_list.append(distance_to_goal.item())
-        
-        previous_distance_list = torch.tensor(previous_distance_list).to(self.device)
-        
-        
-        # loss_actor = (0.5*log_prob*min_actor_Q).sum() #+(0.5*buffer_log_prob*distance_with_state_prediction_batch).sum()
-        print("Distance list: ", distance_list)
-        print("Log prob: ", log_prob)
-        loss_actor = ((1-log_prob)*distance_list).sum() / self.batch_size
+        # print("Distance list: ", distance_list)
+        # print("Log prob: ", log_prob)
+        loss_actor = -(distance_list-(0.01*log_prob_tilde)).sum()/ self.batch_size # + (-(0.2*log_prob)+Q).sum()) / (2*self.batch_size)
         
         self.actor_optimizer.zero_grad()
         loss_actor.backward()
@@ -290,26 +268,16 @@ class ACSAgent:
         
         tmp = np.array(mini_batch.action)        
         action_batch = torch.tensor(tmp).float().to(self.device)
-        # action_batch = torch.stack(mini_batch.action).to(self.device).float()
-        # print("Action Batch: ", action_batch.shape)
         distance_critic_batch = torch.tensor(mini_batch.distance_critic).float().to(self.device)
-        # distance_critic_batch = torch.stack(mini_batch.distance_critic).to(self.device).detach().clone().float()
-        optimal_distance_batch = torch.tensor(mini_batch.optimal_distance).float().to(self.device)
-        # optimal_distance_batch = torch.stack(mini_batch.optimal_distance).to(self.device).float()
         distance_with_state_prediction_batch = torch.tensor(mini_batch.distance_with_state_prediction).float().to(self.device)
         # distance_with_state_prediction_batch = torch.stack(mini_batch.distance_with_state_prediction).to(self.device).float()
-        # print(f"Optimal distance batch: {optimal_distance_batch.shape}")
-        
-        # for p in mini_batch.predictions:
-            # print(f"Prediction: {type(p)} {p}")
-        # predictions_batch = torch.cat(Prediction(*zip(*mini_batch.predictions))).to(self.device).float()
+        # print(f"Optimal distance batch: {distance_batch.shape}")
 
-        loss_critic = self.train_critic(writer, total_number_of_steps, previous_state_batch, state_batch, mini_batch.predictions, optimal_distance_batch)
-        
+        loss_critic = self.train_critic(writer, total_number_of_steps, previous_state_batch, state_batch, mini_batch.predictions, distance_critic_batch)
         loss_state = self.train_state(previous_state_batch, state_batch, action_batch)
+        loss_actor = self.train_actor(previous_state_batch, state_batch, action_batch, distance_critic_batch)
         
-        loss_actor = self.train_actor(previous_state_batch, state_batch, action_batch)
-        
+        self.actual_variance -= self.actual_variance*0.05
 
         writer.add_scalar("Variance", self.actual_variance, total_number_of_steps)
         
