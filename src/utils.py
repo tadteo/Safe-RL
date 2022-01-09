@@ -2,16 +2,32 @@
 
 from collections import namedtuple, deque
 import random
+import math
 
-def calculate_distance(previous_state,state):
+def calculate_distance(state):
+    #calculate the distance
+    # print(state)
+    goal,hazards = state[:16],state[16:]
+    # print(f"Goal: {goal}")
+    
+    # print(max(goal))
+    distance = max(max(goal),0.00001)
+    if(max(hazards)>0.8):
+        distance -=max(max(hazards),0.00001) #min(10/(max(goal)),100)
+    # print(f"Distance to goal: {distance_to_goal}")
+    # distance = (1-(distance_to_goal/10)**0.5) #(distance_to_goal - distance_to_goal_previous) + 0.1*distance_to_goal #TODO Add a positive factor to the closeness to the hazard
+    
+    return distance
+
+def calculate_distance_2(previous_state,state):
     #calculate the distance
     previous_goal,previous_hazards = previous_state[:16],previous_state[16:]
     goal,hazards = state[:16],state[16:]
     
-    distance_to_goal = max(goal)
+    distance_to_goal = -math.log(max(goal)) #min(10/(max(goal)),100)
     distance_to_goal_previous = max(previous_goal)
-    
-    distance = (distance_to_goal - distance_to_goal_previous) + 0.1*distance_to_goal #TODO Add a positive factor to the closeness to the hazard
+    # print(f"Distance to goal: {distance_to_goal}")
+    distance = (1-(distance_to_goal/10)**0.5) #(distance_to_goal - distance_to_goal_previous) + 0.1*distance_to_goal #TODO Add a positive factor to the closeness to the hazard
     
     # if max(goal) >= 0.8:
     #     distance_to_goal = 0
@@ -63,3 +79,27 @@ class ReplayMemory(object):
     
     def __len__(self):
         return len(self.memory)
+
+
+#Logging and Tensorboard
+def write_losses_log(loss_actor, loss_critic, loss_state, total_steps, episode, writer, agent):
+    writer.add_scalar("Loss/Loss: actor_off_policy", loss_actor, total_steps)
+    writer.add_scalar("Loss/Loss: critic_off_policy", loss_critic, total_steps)
+    writer.add_scalar("Loss/Loss: state_off_policy", loss_state, total_steps)
+
+    # if(episode%1==0):
+    for name,weight in agent.actor_model.named_parameters():
+        writer.add_histogram(name,weight,episode)
+        writer.add_histogram("actor/"+name+"/weight",weight,episode)
+        writer.add_histogram("actor/"+name+"/grad",weight.grad,episode)
+        
+    for name,weight in agent.critic_model.named_parameters():
+        writer.add_histogram(name,weight,episode)
+        writer.add_histogram("critic/"+name+"/weight",weight,episode)
+        writer.add_histogram("critic/"+name+"/grad",weight.grad,episode)
+    
+    for name,weight in agent.state_model.named_parameters():
+        writer.add_histogram(name,weight,episode)
+        writer.add_histogram("state/"+name+"/weight",weight,episode)
+        writer.add_histogram("critic/"+name+"/grad",weight.grad,episode)
+

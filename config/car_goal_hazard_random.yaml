@@ -1,6 +1,6 @@
 # Configuaration for the goal hazard car environement
 
-experiment_name : 'car_goal_hazard_sac'
+experiment_name : 'CarGoalHazardRandom'
 
 environment:
   #The environment to use
@@ -19,22 +19,6 @@ environment:
 
 render : True
 epochs : 100
-steps_per_epoch : 10000 #10000
-
-#agent parameters
-min_epsilon: 0.01
-parameters:
-  alpha : 0.1
-
-#ON POLICY parameters
-on_policy : False
-
-# OFF POLICY parameters
-off_policy : True
-update_frequency: 512 #execute a step of training after this number of environment steps
-steps_in_future:  10
-batch_size: 64
-
-discount_factor: 0.99
+steps_per_epoch : 10000
 
 has_continuous_action_space : True

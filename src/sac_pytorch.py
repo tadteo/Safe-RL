@@ -72,20 +72,20 @@ class SACAgent:
         #Create networks
         self.actor_model = ActorModel(input_size=self.state_size,output_size=self.action_size[0])
         self.actor_model = self.actor_model.to(self.device)
-        self.critic_model_1 = CriticModel(input_size=self.state_size,output_size=(1))
-        self.critic_mode_1 = self.critic_model_1.to(self.device)
+        self.critic_model = CriticModel(input_size=self.state_size,output_size=(1))
+        self.critic_mode_1 = self.critic_model.to(self.device)
         self.critic_model_2 = CriticModel(input_size=self.state_size,output_size=(1))
         self.critic_model_2 = self.critic_model_2.to(self.device)
         self.state_model = StateModel(state_size=self.state_size,action_size=self.action_size[0])
         self.state_model = self.state_model.to(self.device)
 
         self.actor_optimizer = torch.optim.Adam(self.actor_model.parameters(), lr=self.learning_rate)
-        self.critic_optimizer_1 = torch.optim.Adam(self.critic_model_1.parameters(), lr=self.learning_rate)
+        self.critic_optimizer_1 = torch.optim.Adam(self.critic_model.parameters(), lr=self.learning_rate)
         self.critic_optimizer_2 = torch.optim.Adam(self.critic_model_2.parameters(), lr=self.learning_rate)
         self.state_optimizer = torch.optim.Adam(self.state_model.parameters(), lr=self.learning_rate)
 
         self.target_critic_1 = CriticModel(input_size=self.state_size,output_size=(1))
-        self.target_critic_1.load_state_dict(copy.deepcopy(self.critic_model_1.state_dict()))
+        self.target_critic_1.load_state_dict(copy.deepcopy(self.critic_model.state_dict()))
         self.target_critic_2 = CriticModel(input_size=self.state_size,output_size=(1))
         self.target_critic_2.load_state_dict(copy.deepcopy(self.critic_model_2.state_dict()))
     
@@ -102,7 +102,7 @@ class SACAgent:
             if l.__class__.__name__ == "Linear":
                     size_actor.append(int(l.out_features))
         size_critic = []
-        for l in self.critic_model_1.layers:
+        for l in self.critic_model.layers:
             if l.__class__.__name__ == "Linear":
                     size_critic.append(int(l.out_features))
         size_state = []
@@ -116,7 +116,7 @@ class SACAgent:
         
         #Save parameter of the models
         torch.save(self.actor_model.state_dict(), os.path.join(path,f'actor_model_{epoch}.pth'))
-        torch.save(self.critic_model_1.state_dict(), os.path.join(path,f'critic_model_{epoch}.pth'))
+        torch.save(self.critic_model.state_dict(), os.path.join(path,f'critic_model_{epoch}.pth'))
         torch.save(self.state_model.state_dict(), os.path.join(path,f'state_model_{epoch}.pth'))
     
     def select_action(self, env, obs, exploration_on = False) -> torch.tensor:
@@ -163,13 +163,13 @@ class SACAgent:
         log_prob = action_dist.log_prob(action_dist.mean)
         # print(log_prob)
         
-        # print(self.critic_model_1(state_batch))
+        # print(self.critic_model(state_batch))
         # print(self.critic_model_2(state_batch))
         y = distance_batch + gamma*(torch.minimum(self.target_critic_1(state_batch),self.target_critic_2(state_batch))-alpha*log_prob)
         
         criterion_critic = nn.MSELoss()
         # loss_critic = criterion_critic(self.critic_model(previous_state_batch),target_Q) #TODO: Extract also the distances in the predictions t have  a mix of distances with and without predictions
-        loss_critic = criterion_critic(self.critic_model_1(state_batch),y) #correct
+        loss_critic = criterion_critic(self.critic_model(state_batch),y) #correct
         self.critic_optimizer_1.zero_grad()
         loss_critic.backward()
         self.critic_optimizer_1.step()
@@ -181,7 +181,7 @@ class SACAgent:
         log_prob = action_dist.log_prob(action_dist.mean)
         # print(log_prob)
         
-        # print(self.critic_model_1(state_batch))
+        # print(self.critic_model(state_batch))
         # print(self.critic_model_2(state_batch))
         y = distance_batch + gamma*(torch.minimum(self.target_critic_1(state_batch),self.target_critic_2(state_batch))-alpha*log_prob)
         
@@ -201,7 +201,7 @@ class SACAgent:
         
         alpha = 0.02
         
-        loss_actor = -(torch.minimum(self.critic_model_1(obs),self.critic_model_2(obs))-alpha*log_prob_tilde).sum()/self.batch_size
+        loss_actor = (torch.minimum(self.critic_model(obs),self.critic_model_2(obs))-alpha*log_prob_tilde).sum()/self.batch_size
         
         self.actor_optimizer.zero_grad()
         loss_actor.backward()
@@ -259,7 +259,7 @@ class SACAgent:
         logging.info(f"Training step completed, returning")
         
         polyak = 0.9
-        for target_param, param in zip(self.target_critic_1.parameters(), self.critic_model_1.parameters()):
+        for target_param, param in zip(self.target_critic_1.parameters(), self.critic_model.parameters()):
             # print(f"target_param, param: {target_param.data}, {param.data}")
             target_param.data.copy_(polyak * target_param.data + (1.0 - polyak) * param.data)
         

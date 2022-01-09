@@ -15,9 +15,9 @@ environment:
   hazards_num : 4
   observe_sensors : False # Disable visualizations of internal sensors for simpler state management    
   continue_goal: False  # If true, draw a new goal after achievement
-  lidar_max_dist: 100  # Maximum distance for lidar sensitivity (if None, exponential distance)
+  lidar_max_dist: 10  # Maximum distance for lidar sensitivity (if None, exponential distance)
 
-render : False
+render : True
 epochs : 100
 steps_per_epoch : 10000
 
@@ -31,7 +31,7 @@ on_policy : False
 
 # OFF POLICY parameters
 off_policy : True
-update_frequency: 512 #execute a step of training after this number of environment steps
+update_frequency: 214 #execute a step of training after this number of environment steps
 steps_in_future:  10
 batch_size: 64
 

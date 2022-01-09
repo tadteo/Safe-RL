@@ -45,7 +45,8 @@ class ActorModel(nn.Module):
         super(ActorModel, self).__init__()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.layers = []
-        self.layers.append(nn.Linear(input_size*2, layers_sizes[0]))
+        # self.layers.append(nn.TransformerEncoderLayer(d_model=input_size, nhead=8, dim_feedforward=2048, dropout=0.1))
+        self.layers.append(nn.Linear(input_size, layers_sizes[0]))
         self.layers.append(activation)
         for i in range(1,len(layers_sizes)):
             self.layers.append(nn.Linear(layers_sizes[i-1],layers_sizes[i]))
@@ -68,6 +69,7 @@ class ActorModel(nn.Module):
             X = torch.from_numpy(input).float().to(self.device)
         else:
             X = input.float()
+        # X = torch.stack([X,X,X],dim=1)
         # print("Actor Model forward: ", type(input), X.shape)
         mu, sigma = self.net(X).chunk(2,dim=-1)
         # print("Mu: ", mu, "\nSigma: ", sigma)

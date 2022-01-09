@@ -18,6 +18,8 @@ from sac_pytorch import SACAgent
 
 from torch.utils.tensorboard import SummaryWriter
 
+from src.utils import calculate_distance
+
 actual_path = os.path.dirname(os.path.realpath(__file__))
 
 config_file =  open(os.path.join(actual_path,'../config/car_goal_hazard_inference.yaml'))
@@ -213,21 +215,9 @@ def main():
                 print("actions: ", list(actions.queue))
                 # print("states: ", list(states.queue))
             # print(f"Observation: {observation}")
-            goal_vector = observation[:16]
-            hazards_vector = observation[16:]
-            
-            #calculate the distance
-            if max(goal_vector) >= 0.8:
-                distance_to_goal = 0
-                optimal_distance = 0
-            else:
-                distance_to_goal = 1/max(max(goal_vector),0.0001) #(1-max(observation[(-3*16):(-2*16)]))*
-                optimal_distance = 1/max(max(goal_vector),0.0001)
-                if max(hazards_vector) >= 0.5: #observation hazard
-                    distance_to_goal += 1/(1-max(hazards_vector))
-            
-            # distance_to_goal = 1-(1/(1+distance_to_goal))
-            logging.debug(f"{episode_steps}. The distance to goal is: {distance_to_goal}")
+                    
+            distance = calculate_distance(observation)
+            logging.debug(f"{episode_steps}. The distance to goal is: {distance}")
             
             
             # episode_distance_traveled += np.linalg.norm(observation-previous_observation)
