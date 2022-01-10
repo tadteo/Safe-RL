@@ -10,7 +10,7 @@ class CriticModel(nn.Module):
     It is used to predict the distance given in input the state of the environment 
     The input is state, the output is the distance to the goal state
     '''
-    def __init__(self, input_size, output_size=1, layers_sizes=[32,128,256,128,64,32], activation=nn.ReLU()):
+    def __init__(self, input_size, output_size=1, layers_sizes=[128,256,128,64,32], activation=nn.ReLU()):
         super(CriticModel, self).__init__()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.layers = []
@@ -36,6 +36,9 @@ class CriticModel(nn.Module):
             X = input.clone().detach().float()    
         #X = torch.tensor(input, dtype=torch.float, device=self.device)
         X = X.clone().detach()
-        for l in self.layers:
-            X = l(X)
-        return X
+        print(f"X shape: {X.shape}")
+        result = self.net(X)
+        # for l in self.layers:
+        #     X = l(X)
+            
+        return result

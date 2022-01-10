@@ -3,6 +3,7 @@
 from asyncore import write
 import numpy as np
 import torch
+from torch.cuda.random import set_rng_state
 import yaml
 import os
 import logging, sys
@@ -57,7 +58,7 @@ def main():
     #Create the environment
     env = Engine(config=ENV_DICT)
     
-    state_size = env.observation_space.shape[0]
+    state_size = int(env.observation_space.shape[0])
     logging.debug(f'State size = {state_size}')
     
     observation = env.reset()
@@ -70,9 +71,9 @@ def main():
     else:
         action_size = env.action_space.n
     logging.debug(f'Action size = {action_size}')
-    state_memory = STATE_IN_MEMORY
+    state_memory_size = STATE_IN_MEMORY
     logging.debug(f'Creating agent')
-    agent = ACSAgent(state_size=state_size*state_memory, action_size=action_size, batch_size=BATCH_SIZE, initial_variance=INITIAL_VARIANCE, final_variance=FINAL_VARIANCE, discount_factor = DISCOUNT_FACTOR)
+    agent = ACSAgent(state_size=state_memory_size*state_size, action_size=action_size, batch_size=BATCH_SIZE, initial_variance=INITIAL_VARIANCE, final_variance=FINAL_VARIANCE, discount_factor = DISCOUNT_FACTOR)
     logging.info(f"Agent created")
 
     #save models
@@ -81,6 +82,9 @@ def main():
     
     writer = SummaryWriter(log_dir=os.path.join(actual_path,"../runs", experiment_name + '_' + socket.gethostname()))
     
+    
+    state_memory = Queue(maxsize=state_memory_size)
+    
     logging.info(f'Starting training')
     total_steps = 0
     episode = 0 
@@ -88,6 +92,9 @@ def main():
         logging.info(f"Starting epoch {epoch}\n\n")
         
         observation, episode_steps, episode_cumulative_distance = env.reset(), 0, 0
+        state_memory.queue.clear()
+        for i in range(state_memory_size):
+            state_memory.put(observation)
         distance = calculate_distance(observation)
         for t in range(STEPS_PER_EPOCH):
             if RENDER:
@@ -100,46 +107,55 @@ def main():
             # #predict future:
             predictions = []
             
-            future_observation = observation
-            for i in range(STEPS_IN_FUTURE):
-                future_action = agent.select_action(future_observation, exploration_on=True)
-                future_state_predicted = agent.state_model(state_input=future_observation, action_input=future_action)
-                future_distance_predicted = agent.critic_model(future_state_predicted)
-                #check if a path of states to the goal has been found
-                for s in future_state_predicted[:16]:
-                    if s >= 0.8:
-                        print("\n\n\n!!!Found path to goal!!!!\n\n\n")
-                        print(f"The predictions to arrive there are: {predictions}")
-                        time.sleep(5)
-                        break
-                predictions.append(Prediction(action=future_action, 
-                                              state=future_state_predicted, 
-                                              distance=future_distance_predicted))
-                
-                future_observation = future_state_predicted
+            state_memory_array = np.asarray(list(state_memory.queue)).flatten()
+            print(state_memory_array)
+            print(state_memory)
             
-            previous_observation = observation
-            action = agent.select_action(observation, exploration_on=True) #equivalent to line below
+            # future_observation = observation
+            # for i in range(STEPS_IN_FUTURE):
+            #     future_action = agent.select_action(future_observation, exploration_on=True)
+            #     future_state_predicted = agent.state_model(state_input=future_observation, action_input=future_action)
+            #     future_distance_predicted = agent.critic_model(future_state_predicted)
+            #     #check if a path of states to the goal has been found
+            #     for s in future_state_predicted[:16]:
+            #         if s >= 0.8:
+            #             print("\n\n\n!!!Found path to goal!!!!\n\n\n")
+            #             print(f"The predictions to arrive there are: {predictions}")
+            #             time.sleep(5)
+            #             break
+            #     predictions.append(Prediction(action=future_action, 
+            #                                   state=future_state_predicted, 
+            #                                   distance=future_distance_predicted))
+                
+            #     future_observation = future_state_predicted
+            
+            previous_state_memory_array = state_memory_array
+            action = agent.select_action(state_memory_array, exploration_on=True) #equivalent to line below
             
             observation, reward, done, info = env.step(action) # Reward not used
-            
+
+            # print(f"Observation: {observation}")
+            print(state_memory.qsize())
+            state_memory.get()
+            state_memory.put(observation)
+
             previous_distance = distance
             distance = calculate_distance(observation)
-            
+
             if episode_steps%100 == 0:
                 logging.debug(f"{episode_steps}. The distance to goal is: {distance} \n")
             
-            
+
             episode_cumulative_distance += distance
             
-            agent.memory_buffer.push(observation, #state
-                                     previous_observation, #previous_state 
+            agent.memory_buffer.push(state_memory_array, #state
+                                     previous_state_memory_array, #previous_state 
                                      action, #action
                                      0, #distance_critic
                                      0, #distance_with_state_prediction
                                      distance, #optimal_distance is the distance to goal when you are enough far away from the obstacles
                                      predictions)
-            
+
             
             #Reset the environment and save data
             if distance >= 99:
