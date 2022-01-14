@@ -89,10 +89,11 @@ class SquashedNormal(pyd.transformed_distribution.TransformedDistribution):
 
 class ActorModel(nn.Module):
 
-    def __init__(self, input_size, output_size, layers_sizes=[32,128,512,128,32], activation=nn.ReLU()):
+    def __init__(self, input_size, output_size, layers_sizes=[32,128,512,128,32], activation=nn.ReLU(), has_continuous_action_space=True):
         super(ActorModel, self).__init__()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.layers = []
+        self.has_continuous_action_space = has_continuous_action_space
         # self.layers.append(nn.TransformerEncoderLayer(d_model=input_size, nhead=8, dim_feedforward=2048, dropout=0.1))
         first_layer = nn.Linear(in_features=input_size, out_features=layers_sizes[0], bias=False)
         
@@ -101,9 +102,15 @@ class ActorModel(nn.Module):
         for i in range(1,len(layers_sizes)):
             self.layers.append(nn.Linear(layers_sizes[i-1],layers_sizes[i]))
             self.layers.append(activation)
-        self.layers.append(nn.Linear(layers_sizes[-1],2*output_size))
+        
 
-        self.layers.append(nn.Tanh())
+        if has_continuous_action_space:
+            self.layers.append(nn.Linear(layers_sizes[-1],2*output_size))
+            self.layers.append(nn.Tanh())
+        else:
+            self.layers.append(nn.Linear(layers_sizes[-1],output_size))
+            self.layers.append(nn.Softmax())
+            
         self.net = nn.Sequential(*self.layers)
         
         self.outputs = dict()
@@ -120,19 +127,15 @@ class ActorModel(nn.Module):
             X = torch.from_numpy(input).float().to(self.device)
         else:
             X = input.clone().detach().float()
-        print("Actor Model forward: ", type(input), X.shape)
-        out = self.net(X)
-        mu, log_std = out.chunk(2,dim=-1)
-        log_std = torch.tanh(log_std)
-        std_dev = log_std.exp()
-        print("Mu: ", mu, "\nSigma: ", log_std)
-        # log_std = torch.diag_embed(log_std**2)
-        print(log_std)
-        dist =SquashedNormal(mu, std_dev)
-        
-        # plotDistribution(dist,self.device)
-        #print(mu.shape, log_std.shape)
-        #log_prob = torch.tanh(mu + log_std*torch.randn(mu.shape,device=self.device))
-        # 
-        
-        return dist #, log_prob
+        # print("Actor Model forward: ", type(input), X.shape)
+       
+        if self.has_continuous_action_space:
+            out = self.net(X)
+            mu, log_std = out.chunk(2,dim=-1)
+            log_std = torch.tanh(log_std)
+            std_dev = log_std.exp()
+            dist =SquashedNormal(mu, std_dev)
+            return dist
+        else:
+            out = self.net(X)
+            return out

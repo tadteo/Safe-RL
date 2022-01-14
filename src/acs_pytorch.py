@@ -10,7 +10,7 @@ import numpy as np
 from datetime import datetime
 
 import torch
-from torch import detach, nn
+from torch import detach, nn, rad2deg
 
 from torch.distributions import MultivariateNormal
 from torch.distributions import Categorical
@@ -34,6 +34,8 @@ class ACSAgent:
                  actor_model_weights=None,
                  critic_model_weights=None,
                  state_model_weights=None,
+                 goal_start=0,
+                 goal_end=0,
                  id_nr=0):
         self.state_size = state_size
         self.action_size = action_size
@@ -49,10 +51,14 @@ class ACSAgent:
         
         self.initial_variance = initial_variance
         self.final_variance = final_variance
-        self.actual_variance = initial_variance
+        self.exploration_factor = 1.0
         
         self.discount_factor = discount_factor
 
+        
+        self.goal_start = goal_start
+        self.goal_end = goal_end
+        
         #Replay buffer
         self.memory_buffer = ReplayMemory(capacity=self.memory_size)
 
@@ -66,18 +72,18 @@ class ACSAgent:
         
         if path_for_trained_models == None:
             #Create networks
-            self.actor_model = ActorModel(input_size=self.state_size,output_size=self.action_size[0])
+            self.actor_model = ActorModel(input_size=self.state_size,output_size=self.action_size, has_continuous_action_space=self.has_continuous_action_space)
             self.critic_model = CriticModel(input_size=self.state_size,output_size=(1))
-            self.state_model = StateModel(state_size=self.state_size,action_size=self.action_size[0])
+            self.state_model = StateModel(state_size=self.state_size,action_size=self.action_size, has_continuous_action_space=self.has_continuous_action_space)
         else:
             import os
             import json
             with open(path_for_trained_models+"/model_sizes.json", 'r') as f:
                 data = json.load(f)
             #Create networks
-            self.actor_model = ActorModel(input_size=self.state_size,output_size=self.action_size[0], layers_sizes=data['actor_model'][:-1])
+            self.actor_model = ActorModel(input_size=self.state_size,output_size=self.action_size[0], layers_sizes=data['actor_model'][:-1], has_continuous_action_space=self.has_continuous_action_space)
             self.critic_model = CriticModel(input_size=self.state_size,output_size=(1), layers_sizes=data['critic_model'][:-1])
-            self.state_model = StateModel(state_size=self.state_size,action_size=self.action_size[0], layers_sizes=data['state_model'][:-1])
+            self.state_model = StateModel(state_size=self.state_size,action_size=self.action_size[0], layers_sizes=data['state_model'][:-1], has_continuous_action_space=self.has_continuous_action_space)
             
             print(os.path.join(path_for_trained_models, actor_model_weights))
             #Loading the weights of the models
@@ -135,52 +141,33 @@ class ACSAgent:
             env ([type]): The environment in which the agent is playing
             obs ([type]): The observation obtained by the environment
         """
+        # logging.info("Selecting action")
+        
         if (type(obs) ==np.ndarray):
             obs = torch.from_numpy(obs).float().to(self.device)
         
         with torch.no_grad():
-
-            if exploration_on:
-                if self.has_continuous_action_space:
-                    action_dist = self.actor_model(obs)
-                    # logging.debug(f"Action mean: {action_mean}")
-                    # action_raw = action_mean
-                    # if self.actual_variance >= self.final_variance :
-                    #     action_dist_exploration = torch.distributions.Normal(action_dist.mean, action_dist.stddev*self.actual_variance)
-                    #     action = action_dist_exploration.rsample()
-                    # else:
+            action_dist = self.actor_model(obs)
+            if self.has_continuous_action_space:
+                # logging.debug(f"Action mean: {action_mean}")
+                # action_raw = action_mean
+                if exploration_on and random.random() <= self.exploration_factor:
                     action = action_dist.rsample()
-                        
-                    # action = action_mean
                 else:
-                    # logging.debug(f"The Observation type is: {observation}")
-                    action_probs = self.actor_model(obs)
-                    # logging.debug(f"The action probs are: {action_probs}")
-                    action_raw= action_probs
-                    dist = Categorical(action_probs)
-                    action = dist.sample()           
-            else:
-                if self.has_continuous_action_space:
-                    action_dist = self.actor_model(obs)
-                    # print("Action dist: ", action_dist.mean, action_dist.stddev)
                     action = action_dist.mean
+            else:
+                if exploration_on and random.random() <= self.exploration_factor:
+                    action = Categorical(logits=action_dist).sample()
                 else:
-                    # logging.debug(f"The Observation type is: {observation}")
-                    action_probs = self.actor_model(obs)
-                    # logging.debug(f"The action probs are: {action_probs}")
-                    action_raw= action_probs
-                    dist = Categorical(action_probs)
-                    action = dist.sample()
-            
-                    # action_logprob = dist.log_prob(action)
-                
-        return action.cpu().detach().numpy()
+                    action = torch.argmax(action_dist)
+
+        return action.detach().numpy()
     
     def train_critic(self, total_number_of_steps, previous_state_batch, state_batch, predictions_batch, distance_batch):
         # #Compute Q values
         # alpha = 0.2
         # gamma = 0.99
-        print(f"State batch: {state_batch.shape}")
+        # print(f"State batch: {state_batch.shape}")
         # target_Q = distance_batch
         # # print(f"Q: {Q.size}, {Q}")
         # for i in range(self.batch_size):
@@ -204,7 +191,7 @@ class ACSAgent:
         criterion_critic = nn.MSELoss()
         # loss_critic = criterion_critic(self.critic_model(previous_state_batch),target_Q) #TODO: Extract also the distances in the predictions t have  a mix of distances with and without predictions
         critic=self.critic_model(state_batch)
-        print(f"Critic: {critic.size()}")
+        # print(f"Critic: {critic.size()}")
         loss_critic = criterion_critic(critic,distance_batch) #correct
         self.critic_optimizer.zero_grad()
         loss_critic.backward()
@@ -219,22 +206,28 @@ class ACSAgent:
 
         #calculate the log_prob of the batch
         # action_tilde = torch.tanh(action_dist.mean + action_dist.stddev*torch.randn(action_dist.mean.shape,device=self.device))
-        #  = log_prob.sum(-1,keepdim=True)     
-        action = action_dist.rsample()
-        log_prob = action_dist.log_prob(action).sum(-1, keepdim=True)
+        #  = log_prob.sum(-1,keepdim=True)
+        
+        if self.has_continuous_action_space:
+            action = action_dist.rsample()
+            log_prob = action_dist.log_prob(action).sum(-1, keepdim=True)
+        else:
+            action = torch.max(action_dist, dim=1)[0]
+            print("Action",action.shape)
+            log_prob = torch.log(action)
 
         # print(f"Log prob: {log_prob}")
                 
         distance_list = []
         #calculate the distance
         for i in range(self.batch_size):
-            distance_list.append(calculate_distance(obs[i]))
+            distance_list.append(calculate_distance(obs[i],self.goal_start,self.goal_end))
         
         distance_list = torch.tensor(distance_list).to(self.device)
         
         print("Distance list: ", distance_list.shape)
         print("Log prob: ", log_prob.shape)
-        loss_actor = ((0.01*log_prob) - distance_list ).mean() # + (-(0.2*log_prob)+Q).sum()) / (2*self.batch_size)
+        loss_actor = ((0.01*log_prob) + distance_list ).mean() # + ((0.01*log_prob) - Q).sum()) / 2
 
         print(f"Loss actor: {loss_actor}")
         self.actor_optimizer.zero_grad()
@@ -271,7 +264,7 @@ class ACSAgent:
         # print("Mini batch: ", mini_batch.state)
         state_batch = np.array(mini_batch.state)
         state_batch = torch.tensor(state_batch).float().to(self.device)
-        print("Mini batch state: ", state_batch.shape)
+        #print("Mini batch state: ", state_batch.shape)
         # state_batch = torch.stack(mini_batch_state).to(self.device).float()
         
         previous_state_batch = np.array(mini_batch.previous_state)
@@ -289,9 +282,9 @@ class ACSAgent:
         loss_state = self.train_state(previous_state_batch, state_batch, action_batch)
         loss_actor = self.train_actor(previous_state_batch, state_batch, action_batch, distance_critic_batch)
         
-        self.actual_variance -= self.actual_variance*0.05
+        self.exploration_factor -= self.exploration_factor*0.05
 
-        writer.add_scalar("Variance", self.actual_variance, total_number_of_steps)
+        writer.add_scalar("Exploration_factor", self.exploration_factor, total_number_of_steps)
         
         logging.info(f"Training step completed, returning")
         return loss_actor.item(), loss_critic.item(), loss_state.item()

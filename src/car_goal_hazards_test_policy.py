@@ -102,8 +102,6 @@ def main():
             # episode_distance_traveled += np.linalg.norm(observation-previous_observation)
             
             
-            
-            
             writer.add_scalar("Distances/Distance: distance_to_goal", distance_to_goal, total_number_of_steps)
             # writer.add_scalar("Distances/Distance: distance_to_goal_predicted", agent.critic_model(observation), total_number_of_steps)
             # #Reset the environment and save data

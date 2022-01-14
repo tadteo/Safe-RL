@@ -2,7 +2,7 @@
 
 from asyncore import write
 import numpy as np
-import torch
+import gym
 from torch.cuda.random import set_rng_state
 import yaml
 import os
@@ -21,7 +21,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 actual_path = os.path.dirname(os.path.realpath(__file__))
 
-config_file =  open(os.path.join(actual_path,'../config/car_goal_hazard_time_memory.yaml'))
+config_file =  open(os.path.join(actual_path,'../config/cartpole_acs_time_memory.yaml'))
 config = yaml.load(config_file, Loader=yaml.FullLoader)
 
 ENV_DICT = config.get('environment')
@@ -59,35 +59,24 @@ def main():
     logging.info(f"\n\nExperiment: {experiment_name}\n\n")
     
     #Create the environment
-    env = Engine(config=ENV_DICT)
+    env = gym.make('CartPole-v1')
     observation = env.reset()
-    print(observation, calculate_distance(observation, goal_start, goal_end))
+    print(f"First observation: {observation}, first distance: {calculate_distance(observation,goal_start,goal_end)}")
     
     state_size = int(env.observation_space.shape[0])
     logging.debug(f'State size = {state_size}')
     
-    observation = env.reset()
-    
-    print(observation)
-    # exit()
+
     # action space dimension
     if HAS_CONTINUOUS_ACTION_SPACE:
-        action_size = env.action_space.shape
+        action_size = env.action_space.shape[0]
     else:
         action_size = env.action_space.n
     logging.debug(f'Action size = {action_size}')
-    state_memory_size = STATE_IN_MEMORY
     
+    state_memory_size = STATE_IN_MEMORY
     logging.debug(f'Creating agent')
-    agent = ACSAgent(state_size=state_memory_size*state_size, 
-                     action_size=action_size, 
-                     batch_size=BATCH_SIZE, 
-                     initial_variance=INITIAL_VARIANCE, 
-                     final_variance=FINAL_VARIANCE, 
-                     discount_factor = DISCOUNT_FACTOR, 
-                     goal_start=goal_start, 
-                     goal_end=goal_end, 
-                     has_continuous_action_space=HAS_CONTINUOUS_ACTION_SPACE)
+    agent = ACSAgent(state_size=state_memory_size*state_size, action_size=action_size, batch_size=BATCH_SIZE, initial_variance=INITIAL_VARIANCE, final_variance=FINAL_VARIANCE, discount_factor = DISCOUNT_FACTOR, goal_start=goal_start, goal_end=goal_end, has_continuous_action_space=HAS_CONTINUOUS_ACTION_SPACE)
     logging.info(f"Agent created")
 
     #save models
@@ -109,7 +98,7 @@ def main():
         state_memory.queue.clear()
         for i in range(state_memory_size):
             state_memory.put(observation)
-        distance = calculate_distance(observation)
+        distance = calculate_distance(observation,goal_start,goal_end)
         for t in range(STEPS_PER_EPOCH):
             if RENDER:
                 env.render()
@@ -154,7 +143,7 @@ def main():
             state_memory.put(observation)
 
             previous_distance = distance
-            distance = calculate_distance(observation, goal_start, goal_end)
+            distance = calculate_distance(observation,goal_start,goal_end)
 
             if episode_steps%100 == 0:
                 logging.debug(f"{episode_steps}. The distance to goal is: {distance} \n")

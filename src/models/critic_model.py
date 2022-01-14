@@ -36,7 +36,7 @@ class CriticModel(nn.Module):
             X = input.clone().detach().float()    
         #X = torch.tensor(input, dtype=torch.float, device=self.device)
         X = X.clone().detach()
-        print(f"X shape: {X.shape}")
+        # print(f"X shape: {X.shape}")
         result = self.net(X)
         # for l in self.layers:
         #     X = l(X)

@@ -3,9 +3,9 @@ import gym
 import random
 import numpy as np
 from collections import deque
-from keras.layers import Dense
+from tensorflow.keras.layers import Dense
 from tensorflow.keras.optimizers import Adam
-from keras.models import Sequential
+from tensorflow.keras.models import Sequential
 import tensorflow as tf
 import pdb
 import plot
@@ -169,9 +169,10 @@ def main():
     #For CartPole-v0, maximum episode length is 200
     env = gym.make('CartPole-v0') #Generate Cartpole-v0 environment object from the gym library
     print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
-    gpu_devices = tf.config.experimental.list_physical_devices('GPU')
-    for device in gpu_devices:
-        tf.config.experimental.set_memory_growth(device, True)
+    # exit()
+    # gpu_devices = tf.config.experimental.list_physical_devices('GPU')
+    # for device in gpu_devices:
+    #     tf.config.experimental.set_memory_growth(device, True)
     #Get state and action sizes from the environment
     state_size = env.observation_space.shape[0]
     action_size = env.action_space.n

@@ -4,16 +4,22 @@ from collections import namedtuple, deque
 import random
 import math
 
-def calculate_distance(state):
+def calculate_distance(state,goal_start,goal_end):
     #calculate the distance
     # print(state)
-    goal,hazards = state[:16],state[16:]
+    # goal,hazards = state[:16],state[16:]
+    if goal_start == 0 and goal_end==0:
+        goal = state
+    else:
+        goal = state[goal_start:goal_end]
+
+
     # print(f"Goal: {goal}")
     
     # print(max(goal))
     distance = max(max(goal),0.00001)
-    if(max(hazards)>0.8):
-        distance -=max(max(hazards),0.00001) #min(10/(max(goal)),100)
+    # if(max(hazards)>0.8):
+    #     distance -=max(max(hazards),0.00001) #min(10/(max(goal)),100)
     # print(f"Distance to goal: {distance_to_goal}")
     # distance = (1-(distance_to_goal/10)**0.5) #(distance_to_goal - distance_to_goal_previous) + 0.1*distance_to_goal #TODO Add a positive factor to the closeness to the hazard
     
