@@ -19,6 +19,9 @@ environment:
   continue_goal: True  # If true, draw a new goal after achievement
   lidar_max_dist: 10  # Maximum distance for lidar sensitivity (if None, exponential distance)
 
+has_continuous_action_space : True
+
+
 #the start and the end of the section of the vector we are interested in
 # goal_start: 0
 # goal_end: 16
@@ -40,7 +43,6 @@ discount_factor: 0.99
 initial_variance: 1000
 final_variance: 0.0001
 
-has_continuous_action_space : True
 
 state_in_memory: 5
 

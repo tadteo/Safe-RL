@@ -1,16 +1,8 @@
 #!/usr/bin/env python3
 
-from asyncore import write
-import queue
-from turtle import distance
-import numpy as np
-import torch
 import yaml
 import os
 import logging, sys
-    
-import socket
-from datetime import datetime
     
 from safety_gym.envs.engine import Engine 
 
@@ -24,32 +16,6 @@ config = yaml.load(config_file, Loader=yaml.FullLoader)
 ENV_DICT = config.get('environment')
 RENDER = config.get('render')
 HAS_CONTINUOUS_ACTION_SPACE = config.get('has_continuous_action_space')
-EPISODES = config.get('episodes')
-STEPS_PER_EPOCH = config.get('steps_per_epoch')
-UPDATE_FREQUENCY = config.get('update_frequency')
-
-STEPS_IN_FUTURE = config.get('steps_in_future')
-
-#Agent parameters
-MIN_EPSILON = config.get('min_epsilon')
-
-ON_POLICY = config.get('on_policy')
-OFF_POLICY = config.get('off_policy')
-
-INITIAL_VARIANCE = config.get('initial_variance')
-FINAL_VARIANCE = config.get('final_variance')
-
-DISCOUNT_FACTOR = config.get('discount_factor')
-BATCH_SIZE = config.get('batch_size')
-
-ACTOR_MODEL_WEIGHTS = config.get('actor_model_weights')
-CRITIC_MODEL_WEIGHTS = config.get('critic_model_weights')
-STATE_MODEL_WEIGHTS = config.get('state_model_weights')
-
-STATE_DIVERGENCE_TRESHOLD = config.get('state_divergence_treshold')
-
-TRAINED_MODEL_PATH = config.get('trained_model_path')
-
 
 logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
 

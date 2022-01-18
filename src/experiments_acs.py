@@ -6,6 +6,7 @@ import logging, sys
 import socket
 
 from safety_gym.envs.engine import Engine 
+import gym
 
 from agents.acs_agent import ACSAgent
 from utils import *
@@ -14,13 +15,18 @@ from torch.utils.tensorboard import SummaryWriter
 
 actual_path = os.path.dirname(os.path.realpath(__file__))
 
-config_file =  open(os.path.join(actual_path,'../config/car_goal_hazard_time_memory.yaml'))
+# config_file =  open(os.path.join(actual_path,'../config/car_goal_hazard_time_memory.yaml'))
 # config_file =  open(os.path.join(actual_path,'../config/car_goal_hazard.yaml'))
 # config_file =  open(os.path.join(actual_path,'../config/car_goal_hazard_test_policy.yaml'))
 
+config_file =  open(os.path.join(actual_path,'../config/cartpole_acs.yaml'))
+
+
 config = yaml.load(config_file, Loader=yaml.FullLoader)
 
-ENV_DICT = config.get('environment')
+ENV = config.get('environment')
+print("ENVIRONMENT: ", ENV)
+
 RENDER = config.get('render')
 HAS_CONTINUOUS_ACTION_SPACE = config.get('has_continuous_action_space')
 EPOCHS = config.get('epochs')
@@ -61,8 +67,15 @@ def main():
     logging.info(f"\n\nExperiment: {experiment_name}\n\n")
     
     #Create the environment
-    env = Engine(config=ENV_DICT)
-        
+    print(f"Creating the environment")
+    print(f"Environment: {ENV}, type: {type(ENV)}")
+    if type(ENV) == str:
+        env = gym.make(ENV)
+    elif type(ENV) == dict:
+        env = Engine(config=ENV)
+    else:
+        raise Exception("Environment type not supported")
+    
     state_size = int(env.observation_space.shape[0])
     logging.debug(f'State size = {state_size}')
    
@@ -121,7 +134,7 @@ def main():
             predictions = []
             
             action = agent.select_action(exploration_on=True)
-            
+            logging.debug(f"Action selected: {action}, type: {type(action)}")
             state, reward, done, info = env.step(action) # Reward not used
             agent.observe(state)
 

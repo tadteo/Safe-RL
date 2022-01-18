@@ -144,13 +144,15 @@ class ACSAgent(Agent):
                     action = action_dist.rsample()
                 else:
                     action = action_dist.mean
+                return action.detach().numpy()
             else:
                 if exploration_on and random.random() <= self.exploration_factor:
                     action = Categorical(logits=action_dist).sample()
                 else:
                     action = torch.argmax(action_dist)
+                return int(action.detach().numpy())
 
-        return action.detach().numpy()
+        
     
     def train_critic(self, previous_state_batch, state_batch, predictions_batch, distance_batch):
         # #Compute Q values

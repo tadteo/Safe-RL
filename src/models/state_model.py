@@ -21,7 +21,7 @@ class StateModel(nn.Module):
         if has_continuous_action_space:
             self.layers.append(nn.Linear((state_size*state_memory_size)+action_size, layers_sizes[0]))
         else:
-            self.layers.append(nn.Linear(state_size+1, layers_sizes[0]))
+            self.layers.append(nn.Linear((state_size*state_memory_size)+1, layers_sizes[0]))
         self.layers.append(activation)
         for i in range(1,len(layers_sizes)):
             self.layers.append(nn.Linear(layers_sizes[i-1],layers_sizes[i]))
@@ -41,7 +41,7 @@ class StateModel(nn.Module):
         
         X_state = state_input.clone().detach().float()
         X_state = nn.Flatten()(X_state)
-        print(f"State shape: {X_state.shape}")
+        # print(f"State shape: {X_state.shape}")
         if self.has_continuous_action_space:
             X_action = action_input.clone().detach().float()
         else:
@@ -49,9 +49,8 @@ class StateModel(nn.Module):
             X_action = X_action.clone().detach().float()
         X_action = nn.Flatten()(X_action)
 
-        print(f"Action shape: {X_action.shape}")
         X = torch.cat((X_state,X_action), dim=-1)
-
+        
         for l in self.layers:
             X = l(X)
         

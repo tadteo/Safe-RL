@@ -1,20 +1,19 @@
 # Configuaration for the goal hazard car environement
 
 experiment_name : 'Cartpole_ACS_memory'
+
+training: True
+
 has_continuous_action_space : False
+environment: 'CartPole-v1'
 
 #the start and the end of the section of the vector we are interested in
-goal_start: 0
-goal_end: 0
+# goal_start: 0
+# goal_end: 0
 
 render : True
 epochs : 100
 steps_per_epoch : 10000
-
-#agent parameters
-min_epsilon: 0.01
-parameters:
-  alpha : 0.1
 
 #ON POLICY parameters
 on_policy : False
