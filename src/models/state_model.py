@@ -10,15 +10,16 @@ class StateModel(nn.Module):
     It is used to predict the next state given in input the state and the action taken 
     The input is state and the action, the output is the next state
     '''
-    def __init__(self, state_size, action_size, action_layers_sizes=[8,16,32], state_layers_sizes=[32,128,64,32], layers_sizes=[32,64,128, 512,128, 64,32], activation=nn.Tanh(), has_continuous_action_space=True):
+    def __init__(self, state_size, state_memory_size, action_size, action_layers_sizes=[8,16,32], state_layers_sizes=[32,128,64,32], layers_sizes=[32,64,128, 512,128, 64,32], activation=nn.Tanh(), has_continuous_action_space=True):
         super(StateModel, self).__init__()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         
         self.has_continuous_action_space = has_continuous_action_space
         
         self.layers = []
+        print(state_size+action_size, type(state_size+action_size))
         if has_continuous_action_space:
-            self.layers.append(nn.Linear(state_size+action_size, layers_sizes[0]))
+            self.layers.append(nn.Linear((state_size*state_memory_size)+action_size, layers_sizes[0]))
         else:
             self.layers.append(nn.Linear(state_size+1, layers_sizes[0]))
         self.layers.append(activation)
@@ -39,13 +40,16 @@ class StateModel(nn.Module):
             action_input = torch.from_numpy(action_input).float().to(self.device)
         
         X_state = state_input.clone().detach().float()
-        
+        X_state = nn.Flatten()(X_state)
+        print(f"State shape: {X_state.shape}")
         if self.has_continuous_action_space:
             X_action = action_input.clone().detach().float()
         else:
             X_action= action_input.unsqueeze(-1)
             X_action = X_action.clone().detach().float()
+        X_action = nn.Flatten()(X_action)
 
+        print(f"Action shape: {X_action.shape}")
         X = torch.cat((X_state,X_action), dim=-1)
 
         for l in self.layers:

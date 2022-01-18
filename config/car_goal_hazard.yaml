@@ -2,13 +2,15 @@
 
 experiment_name : 'CarGoalHazardACS'
 
+training: True
+
 environment:
   #The environment to use
   robot_base: 'xmls/car.xml'
   task : 'goal'
   observation_flatten : True
   observe_goal_lidar : True
-  observe_hazards : True
+  observe_hazards : False #True
   constrain_hazards : True
   # lidar_max_dist : 3
   lidar_num_bins : 16
@@ -44,3 +46,6 @@ initial_variance: 1000
 final_variance: 0.0001
 
 has_continuous_action_space : True
+
+state_in_memory: 1
+

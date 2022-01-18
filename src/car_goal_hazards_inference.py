@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from asyncore import write
 import queue
 import numpy as np
 import torch
@@ -13,8 +12,8 @@ from datetime import datetime
     
 from safety_gym.envs.engine import Engine 
 
-from acs_pytorch import ACSAgent
-from sac_pytorch import SACAgent
+from src.agents.acs_pytorch import ACSAgent
+from src.agents.sac_pytorch import SACAgent
 
 from torch.utils.tensorboard import SummaryWriter
 
@@ -218,28 +217,6 @@ def main():
                     
             distance = calculate_distance(observation)
             logging.debug(f"{episode_steps}. The distance to goal is: {distance}")
-            
-            
-            # episode_distance_traveled += np.linalg.norm(observation-previous_observation)
-            
-            
-            
-            
-            # writer.add_scalar("Distances/Distance: distance_to_goal", distance_to_goal, total_number_of_steps)
-            # writer.add_scalar("Distances/Distance: distance_to_goal_predicted", agent.critic_model(observation), total_number_of_steps)
-            # #Reset the environment and save data
-            # if distance_to_goal >= 99:
-            #     done = True
-            # if done or (t == STEPS_PER_EPOCH-1):
-                
-            #     writer.add_scalar("Performances/Episode steps", episode_steps, total_number_of_episodes)
-            #     writer.add_scalar("Performances/Episode distance", episode_distance_traveled, total_number_of_episodes)
-            #     total_number_of_episodes +=1
-            #     observation, episode_distance_traveled, episode_steps = env.reset(), 0, 0
-                
-            #     logging.info(f"Starting episode {total_number_of_episodes}")
-                
-            
     
     writer.close()
         

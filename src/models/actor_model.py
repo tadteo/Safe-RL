@@ -95,6 +95,7 @@ class ActorModel(nn.Module):
         self.layers = []
         self.has_continuous_action_space = has_continuous_action_space
         # self.layers.append(nn.TransformerEncoderLayer(d_model=input_size, nhead=8, dim_feedforward=2048, dropout=0.1))
+        self.layers.append(nn.Flatten())
         first_layer = nn.Linear(in_features=input_size, out_features=layers_sizes[0], bias=False)
         
         self.layers.append(first_layer)
@@ -127,7 +128,7 @@ class ActorModel(nn.Module):
             X = torch.from_numpy(input).float().to(self.device)
         else:
             X = input.clone().detach().float()
-        # print("Actor Model forward: ", type(input), X.shape)
+        print("Actor Model forward: ", type(input), X.shape)
        
         if self.has_continuous_action_space:
             out = self.net(X)

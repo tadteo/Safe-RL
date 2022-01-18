@@ -14,7 +14,7 @@ from queue import Queue
 
 from safety_gym.envs.engine import Engine 
 
-from acs_pytorch import ACSAgent
+from src.agents.acs_pytorch import ACSAgent
 from utils import *
 
 from torch.utils.tensorboard import SummaryWriter

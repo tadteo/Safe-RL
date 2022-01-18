@@ -12,7 +12,7 @@ from datetime import datetime
     
 from safety_gym.envs.engine import Engine 
 
-from sac_pytorch import SACAgent
+from src.agents.sac_pytorch import SACAgent
 
 from torch.utils.tensorboard import SummaryWriter
 

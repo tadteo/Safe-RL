@@ -23,24 +23,7 @@ from models.state_model import StateModel
 
 import copy
 
-ENV = 'Safexp-CarGoal1-v0'
-RENDER = True
-EPOCHS = 500
-STEPS_PER_EPOCH = 10000
-STEPS_IN_FUTURE = 25 #Number of steps in the future to predict 
-UPDATE_FREQUENCY = 100 #execute a step of training after this number of environment steps
-STEPS_OF_TRAINING = 3 #execute this number of gradient descent steps at each training step
-
-INITIAL_EPSILON = 1.0
-MIN_EPSILON = 0.01
-# EPSILON = 0.1
-
-###FOR OFF POLICY (SAC)
-OFF_POLICY = True
-
-has_continuous_action_space = True
-
-class SACAgent:
+class old_SACAgent:
     def __init__(self,state_size, 
                  action_size, 
                  batch_size, 
@@ -65,7 +48,7 @@ class SACAgent:
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         print('Using {} device'.format(self.device))
 
-        if has_continuous_action_space:
+        if self.has_continuous_action_space:
             self.action_size = action_size
             print("Self.action_size: ", self.action_size)
 

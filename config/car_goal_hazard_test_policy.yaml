@@ -1,6 +1,8 @@
 # Configuaration for the goal hazard car environement
 
-experiment_name : "car_goal_hazard_inference"
+experiment_name : "CarGoalHazardACS_inference"
+
+training: False
 
 environment:
   #The environment to use
@@ -8,12 +10,18 @@ environment:
   task : 'goal'
   observation_flatten : True
   observe_goal_lidar : True
-  observe_hazards : True
+  observe_hazards : False #True
   constrain_hazards : True
   # lidar_max_dist : 3
   lidar_num_bins : 16
   hazards_num : 4
-  observe_sensors : False # Disable visualizations of internal sensors for simpler state management    
+  observe_sensors : False # Disable visualizations of internal sensors for simpler state management
+  continue_goal: True  # If true, draw a new goal after achievement
+  lidar_max_dist: 10  # Maximum distance for lidar sensitivity (if None, exponential distance)
+    
+#the start and the end of the section of the vector we are interested in
+# goal_start: 0
+# goal_end: 16
 
 #model
 trained_model_path : '../models/car_goal_hazard_sac_2021-12-14_20-57-24'
@@ -23,28 +31,11 @@ state_model_weights : 'state_model_90.pth'
 
 
 render : True
-episodes : 50
+epochs : 1
 steps_per_epoch : 10000
 
-#agent parameters
-min_epsilon: 0.01
-parameters:
-  alpha : 0.1
-
-#ON POLICY parameters
-on_policy : False
-
-# OFF POLICY parameters
-off_policy : True
-update_frequency: 64 #execute a step of training after this number of environment steps
 steps_in_future:  1
-batch_size: 64
-
-discount_factor: 0.99
-initial_variance: 100
-final_variance: 0.01
 
 has_continuous_action_space : True
 
-#safety
-state_divergence_treshold : 0.01
+state_in_memory: 1

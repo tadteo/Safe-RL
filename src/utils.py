@@ -14,9 +14,9 @@ def calculate_distance(state,goal_start,goal_end):
         goal = state[goal_start:goal_end]
 
 
-    # print(f"Goal: {goal}")
+    print(f"Goal: {goal}")
     
-    # print(max(goal))
+    print(max(goal))
     distance = max(max(goal),0.00001)
     # if(max(hazards)>0.8):
     #     distance -=max(max(hazards),0.00001) #min(10/(max(goal)),100)

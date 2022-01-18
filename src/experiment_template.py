@@ -6,7 +6,7 @@ import logging, sys
     
 from safety_gym.envs.engine import Engine 
 
-from acs_pytorch import EPOCHS, STEPS_PER_EPOCH, ACSAgent
+from src.agents.acs_pytorch import EPOCHS, STEPS_PER_EPOCH, ACSAgent
 
 from torch.utils.tensorboard import SummaryWriter
 
@@ -20,29 +20,24 @@ has_continuous_action_space = config.get('has_continuous_action_space')
 EPOCHS = config.get('epochs')
 STEPS_PER_EPOCH = config.get('steps_per_epoch')
 
-logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
+AGENT_KIND = 'acs' #acs, sac or ddpg, etc
 
+logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
 
 def main():
     
     #Create the environment
     env = Engine(config=ENV_DICT)
-
     
     state_size = env.observation_space.shape[0]
-    logging.debug(f'State size = {state_size}')
-    
-    
-    observation_dict = env.reset()
-    
-    print(observation_dict)
+    logging.info(f'State size = {state_size}')
     
     # action space dimension
     if has_continuous_action_space:
         action_size = env.action_space.shape[0]
     else:
         action_size = env.action_space.n
-    logging.debug(f'Action size = {action_size}')
+    logging.info(f'Action size = {action_size}')
 
     logging.debug(f'Creating agent')
     agent = ACSAgent(state_size=state_size, action_size=action_size)

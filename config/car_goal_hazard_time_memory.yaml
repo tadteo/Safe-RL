@@ -2,6 +2,8 @@
 
 experiment_name : 'CarGoalHazardACS_memory'
 
+training: True
+
 environment:
   #The environment to use
   robot_base: 'xmls/car.xml'
@@ -17,14 +19,13 @@ environment:
   continue_goal: True  # If true, draw a new goal after achievement
   lidar_max_dist: 10  # Maximum distance for lidar sensitivity (if None, exponential distance)
 
+#the start and the end of the section of the vector we are interested in
+# goal_start: 0
+# goal_end: 16
+
 render : True
 epochs : 100
 steps_per_epoch : 10000
-
-#agent parameters
-min_epsilon: 0.01
-parameters:
-  alpha : 0.1
 
 #ON POLICY parameters
 on_policy : False
