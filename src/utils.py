@@ -14,9 +14,9 @@ def calculate_distance(state,goal_start,goal_end):
         goal = state[goal_start:goal_end]
 
 
-    print(f"Goal: {goal}")
+    # print(f"Goal: {goal}")
     
-    print(max(goal))
+    # print(max(goal))
     distance = max(max(goal),0.00001)
     # if(max(hazards)>0.8):
     #     distance -=max(max(hazards),0.00001) #min(10/(max(goal)),100)
@@ -45,20 +45,6 @@ def calculate_distance_2(previous_state,state):
     
     return distance
 
-def generate_exp_name(exp_name):
-    """
-    Generate a unique experiment name.
-    """
-    import datetime
-    
-    # Get the current time
-    now = datetime.datetime.now()
-    now = now.strftime("%Y-%m-%d_%H-%M-%S")
-    # Generate a unique experiment name
-    exp_name = exp_name + '_' + now
-    
-    return exp_name
-
 Prediction = namedtuple('Prediction', ("action", 
                                        "distance", 
                                        "state"))
@@ -70,8 +56,6 @@ Transition = namedtuple('Transition', ('state',
                                        'distance_critic', 
                                        'distance_with_state_prediction',  
                                        'predictions'))
-
-## adding a comment
 
 class ReplayMemory(object):
     def __init__(self, capacity):
@@ -85,7 +69,6 @@ class ReplayMemory(object):
     
     def __len__(self):
         return len(self.memory)
-
 
 #Logging and Tensorboard
 def write_losses_log(loss_actor, loss_critic, loss_state, total_steps, episode, writer, agent):
@@ -109,3 +92,32 @@ def write_losses_log(loss_actor, loss_critic, loss_state, total_steps, episode, 
         writer.add_histogram("state/"+name+"/weight",weight,episode)
         writer.add_histogram("critic/"+name+"/grad",weight.grad,episode)
 
+#general utilities
+def read_config(config_file):
+    import os,yaml
+    
+    actual_path = os.path.dirname(os.path.realpath(__file__))
+    
+    with open(os.path.join(actual_path,'../config/',config_file), 'r') as f:
+        config = yaml.load(f, Loader=yaml.FullLoader)
+    
+    # config_file =  open(os.path.join(actual_path,'../config/car_goal_acs.yaml'))
+    # config_file =  open(os.path.join(actual_path,'../config/car_goal_acs_test_policy.yaml'))
+    # config_file =  open(os.path.join(actual_path,'../config/cartpole_acs.yaml'))
+    # config_file =  open(os.path.join(actual_path,'../config/car_goal_sac.yaml'))
+
+    return config
+
+def generate_exp_name(exp_name):
+    """
+    Generate a unique experiment name.
+    """
+    import datetime
+    
+    # Get the current time
+    now = datetime.datetime.now()
+    now = now.strftime("%Y-%m-%d_%H-%M-%S")
+    # Generate a unique experiment name
+    exp_name = exp_name + '_' + now
+    
+    return exp_name

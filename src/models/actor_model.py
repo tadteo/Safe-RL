@@ -81,7 +81,6 @@ class ActorModel(nn.Module):
             X = torch.from_numpy(input).float().to(self.device)
         else:
             X = input.clone().detach().float()
-        print("Actor Model forward: ", type(input), X.shape)
        
         if self.has_continuous_action_space:
             out = self.net(X)

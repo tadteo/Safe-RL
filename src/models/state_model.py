@@ -17,7 +17,7 @@ class StateModel(nn.Module):
         self.has_continuous_action_space = has_continuous_action_space
         
         self.layers = []
-        print(state_size+action_size, type(state_size+action_size))
+        # print(state_size+action_size, type(state_size+action_size))
         if has_continuous_action_space:
             self.layers.append(nn.Linear((state_size*state_memory_size)+action_size, layers_sizes[0]))
         else:

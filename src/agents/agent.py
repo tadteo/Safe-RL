@@ -25,7 +25,7 @@ class Agent(object):
 
         #Device info
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        print('Using {} device'.format(self.device))
+        print('Using {} device\n\n'.format(self.device))
         
         self.state_size = state_size
         self.action_size = action_size

@@ -1,6 +1,6 @@
 # Configuaration for the goal hazard car environement
 
-experiment_name : 'CarGoalHazardACS'
+experiment_name : 'CarGoal_ACS'
 
 training: True
 

@@ -5,10 +5,43 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: Experiments File",
+            "name": "Car_Goal_ACS",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/src/run_experiment.py",
+            "args": [
+                "car_goal_acs.yaml"
+            ],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Cartpole ACS",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/run_experiment.py",
+            "args": [
+                "cartpole_acs.yaml"
+            ],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Car Goal SAC",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/run_experiment.py",
+            "args": [
+                "car_goal_sac.yaml"
+            ],
+            "console": "integratedTerminal"
+        }
+        {
+            "name": "Cartpole SAC",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/run_experiment.py",
+            "args": [
+                "cartpole_sac.yaml"
+            ],
             "console": "integratedTerminal"
         }
     ]

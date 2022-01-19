@@ -1,0 +1,44 @@
+# Configuaration for the goal hazard car environement
+
+experiment_name : "CarGoalHazardACS_inference"
+
+training: False
+render : False
+logging_level : "NO_LOG"
+
+agent_kind : 'ACS'
+
+environment:
+  #The environment to use
+  robot_base: 'xmls/car.xml'
+  task : 'goal'
+  observation_flatten : True
+  observe_goal_lidar : True
+  observe_hazards : False #True
+  constrain_hazards : True
+  lidar_num_bins : 16
+  hazards_num : 4
+  observe_sensors : False # Disable visualizations of internal sensors for simpler state management
+  continue_goal: True  # If true, draw a new goal after achievement
+  lidar_max_dist: 10  # Maximum distance for lidar sensitivity (if None, exponential distance)
+    
+#the start and the end of the section of the vector we are interested in
+# goal_start: 0
+# goal_end: 16
+
+#model
+trained_model_path : '../models/car_goal_hazard_sac_2021-12-14_20-57-24'
+actor_model_weights : 'actor_model_90.pth'
+critic_model_weights : 'critic_model_90.pth'
+state_model_weights : 'state_model_90.pth'
+
+
+epochs : 1
+steps_per_epoch : 10000
+
+steps_in_future:  1
+
+has_continuous_action_space : True
+
+state_in_memory: 1
+learning_rate: 0.001

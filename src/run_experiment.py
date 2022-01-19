@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import yaml
+from cmath import log
 import os
 import logging, sys
 import socket
@@ -10,74 +10,77 @@ import gym
 
 from agents.acs_agent import ACSAgent
 from agents.sac_agent import SACAgent
-from utils import *
 
+from utils import *
 from torch.utils.tensorboard import SummaryWriter
 
-actual_path = os.path.dirname(os.path.realpath(__file__))
+def run_experiment(config):
+    
+    #SETTING UP PARAMETERS
+    ENV = config.get('environment')
 
-# config_file =  open(os.path.join(actual_path,'../config/car_goal_acs.yaml'))
-# config_file =  open(os.path.join(actual_path,'../config/car_goal_acs_test_policy.yaml'))
+    RENDER = config.get('render')
+    HAS_CONTINUOUS_ACTION_SPACE = config.get('has_continuous_action_space')
+    EPOCHS = config.get('epochs')
+    STEPS_PER_EPOCH = config.get('steps_per_epoch')
+    UPDATE_FREQUENCY = config.get('update_frequency')
 
-config_file =  open(os.path.join(actual_path,'../config/cartpole_acs.yaml'))
+    AGENT_KIND = config.get('agent_kind') #'SAC' or 'ACS'
 
-# config_file =  open(os.path.join(actual_path,'../config/car_goal_sac.yaml'))
+    STEPS_IN_FUTURE = config.get('steps_in_future')
 
+    #Agent hyperparameters
+    LEARNING_RATE = config.get('learning_rate') 
+    ALPHA = config.get('alpha')
+    GAMMA = config.get('gamma')
+    POLYAK = config.get('polyak')
 
-config = yaml.load(config_file, Loader=yaml.FullLoader)
+    MIN_EPSILON = config.get('min_epsilon')
 
-ENV = config.get('environment')
-print("ENVIRONMENT: ", ENV)
+    ON_POLICY = config.get('on_policy')
+    OFF_POLICY = config.get('off_policy')
 
-RENDER = config.get('render')
-HAS_CONTINUOUS_ACTION_SPACE = config.get('has_continuous_action_space')
-EPOCHS = config.get('epochs')
-STEPS_PER_EPOCH = config.get('steps_per_epoch')
-UPDATE_FREQUENCY = config.get('update_frequency')
+    INITIAL_VARIANCE = config.get('initial_variance')
+    FINAL_VARIANCE = config.get('final_variance')
 
-AGENT_KIND = config.get('agent_kind') #'SAC' or 'ACS'
+    DISCOUNT_FACTOR = config.get('discount_factor')
+    BATCH_SIZE = config.get('batch_size')
+    EXPERIMENT_NAME = config.get('experiment_name')
+    STATE_IN_MEMORY = config.get('state_in_memory')
 
-STEPS_IN_FUTURE = config.get('steps_in_future')
+    goal_start = config.get('goal_start')
+    goal_end = config.get('goal_end')
 
-#Agent hyperparameters
-LEARNING_RATE = config.get('learning_rate') 
-ALPHA = config.get('alpha')
-GAMMA = config.get('gamma')
-POLYAK = config.get('polyak')
+    ACTOR_MODEL_WEIGHTS = config.get('actor_model_weights')
+    CRITIC_MODEL_WEIGHTS = config.get('critic_model_weights')
+    STATE_MODEL_WEIGHTS = config.get('state_model_weights')
 
-MIN_EPSILON = config.get('min_epsilon')
+    TRAINING = config.get('training')
+    
+    LOGGING_LVL = config.get('logging_level')
+    
+###############################################################################
+    
+    if(LOGGING_LVL == 'DEBUG'):
+        logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
+    elif(LOGGING_LVL == 'INFO'):
+        logging.basicConfig(stream=sys.stderr, level=logging.INFO)
+    elif(LOGGING_LVL == 'NO_LOG'):
+        logging.basicConfig(filename='/tmp/experiment_log.txt', level=logging.INFO)
+    else:
+        logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
+        
+    actual_path = os.path.dirname(os.path.realpath(__file__))
 
-ON_POLICY = config.get('on_policy')
-OFF_POLICY = config.get('off_policy')
+####Start Experiment###########################################################
 
-INITIAL_VARIANCE = config.get('initial_variance')
-FINAL_VARIANCE = config.get('final_variance')
-
-DISCOUNT_FACTOR = config.get('discount_factor')
-BATCH_SIZE = config.get('batch_size')
-EXPERIMENT_NAME = config.get('experiment_name')
-STATE_IN_MEMORY = config.get('state_in_memory')
-
-goal_start = config.get('goal_start')
-goal_end = config.get('goal_end')
-
-ACTOR_MODEL_WEIGHTS = config.get('actor_model_weights')
-CRITIC_MODEL_WEIGHTS = config.get('critic_model_weights')
-STATE_MODEL_WEIGHTS = config.get('state_model_weights')
-
-TRAINING = config.get('training')
-
-logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
-
-
-def main():
     
     experiment_name = generate_exp_name(EXPERIMENT_NAME)
     logging.info(f"\n\nExperiment: {experiment_name}\n\n")
     
     #Create the environment
-    print(f"Creating the environment")
-    print(f"Environment: {ENV}, type: {type(ENV)}")
+    logging.info(f"Creating the environment")
+    logging.info(f"Environment: {ENV}, type: {type(ENV)}")
     if type(ENV) == str:
         env = gym.make(ENV)
     elif type(ENV) == dict:
@@ -168,7 +171,7 @@ def main():
             predictions = []
             
             action = agent.select_action(exploration_on=True)
-            logging.debug(f"Action selected: {action}, type: {type(action)}")
+            # logging.debug(f"Action selected: {action}, type: {type(action)}")
             state, reward, done, info = env.step(action) # Reward not used (used just for logging)
             agent.observe(state)
 
@@ -183,7 +186,9 @@ def main():
             episode_cumulative_reward += reward
             
             agent.update_replay_memory(action, distance)
-            
+            # agent.update_replay_memory(action, reward)
+
+                        
             #Reset the environment and save data
             if distance >= 99:
                 done = True
@@ -208,8 +213,23 @@ def main():
             
         if epoch % 5 == 0 and epoch != 0:
             agent.save_models(experiment_name,epoch)
-            
+    
+    logging.info(f"Training finished\n\n--------------------------------------------------------------------\n\n")
+    
     writer.close()
-        
+
+def main():
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Train a model given the configuration file.\nConfiguration Files are located in config/\nExample: python run_experiment.py car_goal_acs.yaml')
+    
+    parser.add_argument('config', type=str, help='Path to the configuration file')
+    # parser.add_argument('--render', type=bool, default=False, help='Render the environment')
+    args = parser.parse_args()
+    
+    config = read_config(args.config)
+
+    run_experiment(config)
+
 if __name__ == '__main__':
     main()

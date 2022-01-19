@@ -1,6 +1,6 @@
 # Configuaration for the goal hazard car environement
 
-experiment_name : "car_goal_hazard_inference"
+experiment_name : "CarGoalHazard_inference"
 
 environment:
   #The environment to use

@@ -1,8 +1,10 @@
 # Configuaration for the goal hazard car environement
 
-experiment_name : 'CarGoal_SAC'
+experiment_name : 'Test_CarGoalHazardSAC'
 
-training: True
+training: False
+render : False
+logging_level : "NO_LOG"
 
 agent_kind : 'SAC'
 
@@ -27,9 +29,8 @@ has_continuous_action_space : True
 # goal_start: 0
 # goal_end: 16
 
-render : True
-epochs : 100
-steps_per_epoch : 10000
+epochs : 1
+steps_per_epoch : 1000
 
 #agent hyperparameters
 alpha : 0.2
@@ -39,10 +40,10 @@ learning_rate : 0.001
 
 # OFF POLICY parameters
 off_policy : True
-update_frequency: 512 #execute a step of training after this number of environment steps
+update_frequency: 64 #execute a step of training after this number of environment steps
 steps_in_future:  10
-batch_size: 64
+batch_size: 32
 
 discount_factor: 0.99
 
-state_in_memory: 5
+state_in_memory: 3 #number of states observed used as single observation

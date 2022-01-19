@@ -129,11 +129,8 @@ class ACSAgent(Agent):
             env ([type]): The environment in which the agent is playing
             obs ([type]): The observation obtained by the environment
         """
-        print(self.state_memory)
         obs = list(self.state_memory)
-        print(obs)
         obs = torch.stack(obs).to(self.device)
-        print(obs.shape)
         obs = obs[None,:]
         with torch.no_grad():
             action_dist = self.actor_model(obs)
@@ -153,30 +150,7 @@ class ACSAgent(Agent):
         
     
     def train_critic(self, previous_state_batch, state_batch, predictions_batch, distance_batch):
-        # #Compute Q values
-        # alpha = 0.2
-        # gamma = 0.99
-        # print(f"State batch: {state_batch.shape}")
-        # target_Q = distance_batch
-        # # print(f"Q: {Q.size}, {Q}")
-        # for i in range(self.batch_size):
-
-        #     for p in predictions_batch[i]:                
-        #         future_distance_predicted = self.critic_model(p.state)
-        #         target_Q[i] += (future_distance_predicted.item() - target_Q[i])
-        
-        # action_mean = self.actor_model(state_batch)
-        # next_action_batch = dist.rsample()
-        # log_prob = dist.log_prob(next_action_batch).sum(-1,keepdim=True)
-        # print("Log Prob: ", log_prob)
-        # target_V = self.critic_model(state_batch) - alpha * log_prob
-        # target_Q = distance_batch + self.discount_factor * target_V
-        # target_Q = target_Q.detach()
-        # target_Q = target_V.detach()
-        
-        # with torch.no_grad():
-            # writer.add_scalar('Q/Predicted Q', self.critic_model(previous_state_batch).mean().item(), total_number_of_steps)
-            # writer.add_scalar('Q/Target Q', target_Q.mean().item(), total_number_of_steps)
+        """Train the critic model"""
         criterion_critic = nn.MSELoss()
         # loss_critic = criterion_critic(self.critic_model(previous_state_batch),target_Q) #TODO: Extract also the distances in the predictions t have  a mix of distances with and without predictions
         critic=self.critic_model(state_batch)
@@ -229,7 +203,7 @@ class ACSAgent(Agent):
         #Compute states and predicted states
         state_predictions = self.state_model(previous_state_batch,action_batch)
         criterion_state = nn.MSELoss()
-        print(f"State batch list element shape: {state_batch[:,-1].shape}")
+        # print(f"State batch list element shape: {state_batch[:,-1].shape}")
         loss_state = criterion_state(state_predictions,state_batch[:,-1].clone().detach())
         self.state_optimizer.zero_grad()
         self.state_model.zero_grad()
@@ -255,18 +229,14 @@ class ACSAgent(Agent):
             state_batch[i]=list(mini_batch.state[i])
         for i in range(len(state_batch)):
             state_batch[i] = torch.stack(state_batch[i]).to(self.device)
-        print(type(state_batch[i]))
         state_batch = torch.stack(state_batch).to(self.device)
-        print(state_batch.shape)
         
         previous_state_batch = list(mini_batch.previous_state)
         for i in range(len(mini_batch.previous_state)):
             previous_state_batch[i]=list(mini_batch.previous_state[i])
         for i in range(len(previous_state_batch)):
             previous_state_batch[i] = torch.stack(previous_state_batch[i]).to(self.device)
-        print(type(previous_state_batch[i]))
         previous_state_batch = torch.stack(previous_state_batch).to(self.device)
-        print(previous_state_batch.shape)
         
         tmp = np.array(mini_batch.action)        
         action_batch = torch.tensor(tmp).float().to(self.device)
@@ -283,15 +253,3 @@ class ACSAgent(Agent):
                 
         return loss_actor.item(), loss_critic.item(), loss_state.item()
 
-def flatten_obs(obs):
-    print(f"Observation: {obs}")
-    obs_flat_size= sum([np.prod(i.shape) for i in obs.values()])
-    flat_obs = np.zeros(obs_flat_size)
-    offset = 0
-    for k in sorted(obs.keys()):
-        k_size = np.prod(obs[k].shape)
-        flat_obs[offset:offset + k_size] = obs[k].flat
-        offset += k_size
-    obs = flat_obs
-    print(f"Flat Observation: {obs}")
-    return obs

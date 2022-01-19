@@ -171,8 +171,6 @@ class SACAgent(Agent):
                 else:
                     action = torch.argmax(action_dist)
                 return int(action.detach().numpy())
-
-        
     
     def train_critic(self, previous_state_batch, state_batch, predictions_batch, distance_batch):
         # Compute targets for the Q functions
@@ -181,9 +179,19 @@ class SACAgent(Agent):
         q2 = self.critic_model_2(state_batch)
         
         with torch.no_grad():
-            action_dist = self.actor_model(state_batch)
-            log_prob = action_dist.log_prob(action_dist.mean).sum(axis=-1)
-
+            
+            if self.has_continuous_action_space:
+                action_dist = self.actor_model(state_batch)
+                
+                action=action_dist.rsample()
+                log_prob = action_dist.log_prob(action).sum(axis=-1)
+                log_prob = log_prob - (2*(np.log(2) - action - F.softplus(-2*action))).sum(axis=1)
+            else:
+                action_prob = torch.max(self.actor_model(state_batch),-1)[0]
+                # print(f"action_prob: {action_prob}, type: {type(action_prob)}")
+                log_prob = torch.log(action_prob)
+                # print(f"log_prob: {log_prob}, type: {type(log_prob)}")
+                
             q1_pi_target = self.target_critic_1(state_batch)
             q2_pi_target = self.target_critic_2(state_batch)
             q_pi_target = torch.min(q1_pi_target, q2_pi_target)
@@ -202,13 +210,17 @@ class SACAgent(Agent):
     
     def train_actor(self, obs):
         
-        action_dist = self.actor_model(obs)
-        
-        
-        action=action_dist.rsample()
-        log_prob = action_dist.log_prob(action).sum(axis=-1)
-        log_prob = log_prob - (2*(np.log(2) - action - F.softplus(-2*action))).sum(axis=1)
-                
+        if self.has_continuous_action_space:
+            action_dist = self.actor_model(obs)
+            
+            action=action_dist.rsample()
+            log_prob = action_dist.log_prob(action).sum(axis=-1)
+            log_prob = log_prob - (2*(np.log(2) - action - F.softplus(-2*action))).sum(axis=1)
+        else:
+            action_prob = torch.max(self.actor_model(obs),-1)[0]
+            # print(f"action_prob: {action_prob}, type: {type(action_prob)}")
+            log_prob = torch.log(action_prob)        
+
         loss_actor = (torch.minimum(self.critic_model(obs),self.critic_model_2(obs))-self.alpha*log_prob).mean()
         
         self.actor_optimizer.zero_grad()
