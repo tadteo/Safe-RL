@@ -4,6 +4,8 @@ experiment_name : 'CarGoalHazardACS'
 
 training: True
 
+agent_kind : 'ACS'
+
 environment:
   #The environment to use
   robot_base: 'xmls/car.xml'
@@ -16,21 +18,18 @@ environment:
   lidar_num_bins : 16
   hazards_num : 4
   observe_sensors : False # Disable visualizations of internal sensors for simpler state management    
-  continue_goal: False  # If true, draw a new goal after achievement
+  continue_goal: True  # If true, draw a new goal after achievement
   lidar_max_dist: 10  # Maximum distance for lidar sensitivity (if None, exponential distance)
 
+has_continuous_action_space : True
+
 #the start and the end of the section of the vector we are interested in
-goal_start: 0
-goal_end: 16
+# goal_start: 0
+# goal_end: 16
 
 render : True
 epochs : 100
 steps_per_epoch : 10000
-
-#agent parameters
-min_epsilon: 0.01
-parameters:
-  alpha : 0.1
 
 #ON POLICY parameters
 on_policy : False
@@ -45,7 +44,8 @@ discount_factor: 0.99
 initial_variance: 1000
 final_variance: 0.0001
 
-has_continuous_action_space : True
 
-state_in_memory: 1
+state_in_memory: 1 #number of states observed used as single observation
 
+#Hyperparameters
+learning_rate : 0.001

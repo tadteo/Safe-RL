@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from copy import deepcopy
 import torch
 import numpy as np
 from torch import nn
@@ -18,7 +17,8 @@ class ACSAgent(Agent):
     def __init__(self,state_size, 
                  action_size,
                  state_memory_size=1,
-                 batch_size=32, 
+                 batch_size=32,
+                 learning_rate=0.001,
                  initial_variance=None, final_variance=None, 
                  discount_factor=None,
                  has_continuous_action_space=True,
@@ -34,6 +34,7 @@ class ACSAgent(Agent):
                 action_size=action_size,
                 state_memory_size=state_memory_size,
                 batch_size=batch_size,
+                learning_rate=learning_rate,
                 has_continuous_action_space=has_continuous_action_space,
                 path_for_trained_models=path_for_trained_models,
                 )
@@ -41,9 +42,6 @@ class ACSAgent(Agent):
         self.actor_model_weights = actor_model_weights
         self.critic_model_weights = critic_model_weights
         self.state_model_weights = state_model_weights
-        
-        #Hyperparameters:
-        self.learning_rate = 0.001
         
         self.initial_variance = initial_variance
         self.final_variance = final_variance

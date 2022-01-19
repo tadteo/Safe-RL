@@ -15,6 +15,7 @@ class Agent(object):
                  action_size,
                  state_memory_size = 1,
                  batch_size=32,
+                 learning_rate=0.001,
                  replay_memory_size=10000,
                  has_continuous_action_space=True,
                  path_for_trained_models=None,
@@ -29,6 +30,9 @@ class Agent(object):
         self.state_size = state_size
         self.action_size = action_size
         self.id_nr = id_nr
+        
+        #Hyperparameters
+        self.learning_rate = learning_rate
 
         #Memory used as observation --> the observation can contatin multiple states
         self.state_memory_size = state_memory_size

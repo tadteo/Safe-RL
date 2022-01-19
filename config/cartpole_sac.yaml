@@ -1,12 +1,12 @@
 # Configuaration for the goal hazard car environement
 
-experiment_name : 'Cartpole_ACS'
+experiment_name : 'Cartpole_SAC'
 
 training: True
 
 has_continuous_action_space : False
 
-agent_kind : 'ACS'
+agent_kind : 'SAC'
 
 environment: 'CartPole-v1'
 

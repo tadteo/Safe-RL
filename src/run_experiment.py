@@ -9,17 +9,19 @@ from safety_gym.envs.engine import Engine
 import gym
 
 from agents.acs_agent import ACSAgent
+from agents.sac_agent import SACAgent
 from utils import *
 
 from torch.utils.tensorboard import SummaryWriter
 
 actual_path = os.path.dirname(os.path.realpath(__file__))
 
-# config_file =  open(os.path.join(actual_path,'../config/car_goal_hazard_time_memory.yaml'))
-# config_file =  open(os.path.join(actual_path,'../config/car_goal_hazard.yaml'))
-# config_file =  open(os.path.join(actual_path,'../config/car_goal_hazard_test_policy.yaml'))
+# config_file =  open(os.path.join(actual_path,'../config/car_goal_acs.yaml'))
+# config_file =  open(os.path.join(actual_path,'../config/car_goal_acs_test_policy.yaml'))
 
 config_file =  open(os.path.join(actual_path,'../config/cartpole_acs.yaml'))
+
+# config_file =  open(os.path.join(actual_path,'../config/car_goal_sac.yaml'))
 
 
 config = yaml.load(config_file, Loader=yaml.FullLoader)
@@ -33,9 +35,16 @@ EPOCHS = config.get('epochs')
 STEPS_PER_EPOCH = config.get('steps_per_epoch')
 UPDATE_FREQUENCY = config.get('update_frequency')
 
+AGENT_KIND = config.get('agent_kind') #'SAC' or 'ACS'
+
 STEPS_IN_FUTURE = config.get('steps_in_future')
 
-#Agent parameters
+#Agent hyperparameters
+LEARNING_RATE = config.get('learning_rate') 
+ALPHA = config.get('alpha')
+GAMMA = config.get('gamma')
+POLYAK = config.get('polyak')
+
 MIN_EPSILON = config.get('min_epsilon')
 
 ON_POLICY = config.get('on_policy')
@@ -87,20 +96,45 @@ def main():
     state_memory_size = STATE_IN_MEMORY
         
     logging.debug(f'Creating agent')
-    agent = ACSAgent(state_size=state_size, 
-                     action_size=action_size, 
-                     state_memory_size=state_memory_size,
-                     batch_size=BATCH_SIZE,
-                     initial_variance=INITIAL_VARIANCE, 
-                     final_variance=FINAL_VARIANCE, 
-                     discount_factor = DISCOUNT_FACTOR, 
-                     goal_start=goal_start, 
-                     goal_end=goal_end, 
-                     has_continuous_action_space=HAS_CONTINUOUS_ACTION_SPACE,
-                     actor_model_weights=ACTOR_MODEL_WEIGHTS,
-                     critic_model_weights=CRITIC_MODEL_WEIGHTS,
-                     state_model_weights=STATE_MODEL_WEIGHTS
-                     )
+    if AGENT_KIND == 'ACS':
+        agent = ACSAgent(state_size=state_size, 
+                        action_size=action_size, 
+                        state_memory_size=state_memory_size,
+                        batch_size=BATCH_SIZE,
+                        learning_rate=LEARNING_RATE,
+                        initial_variance=INITIAL_VARIANCE, 
+                        final_variance=FINAL_VARIANCE, 
+                        discount_factor = DISCOUNT_FACTOR, 
+                        goal_start=goal_start, 
+                        goal_end=goal_end, 
+                        has_continuous_action_space=HAS_CONTINUOUS_ACTION_SPACE,
+                        actor_model_weights=ACTOR_MODEL_WEIGHTS,
+                        critic_model_weights=CRITIC_MODEL_WEIGHTS,
+                        state_model_weights=STATE_MODEL_WEIGHTS
+                        )
+    elif AGENT_KIND == 'SAC':
+        agent = SACAgent(state_size=state_size,
+                        action_size=action_size, 
+                        state_memory_size=state_memory_size,
+                        batch_size=BATCH_SIZE,
+                        learning_rate=LEARNING_RATE,
+                        alpha=ALPHA,
+                        gamma=GAMMA,
+                        polyak=POLYAK,
+                        initial_variance=INITIAL_VARIANCE, 
+                        final_variance=FINAL_VARIANCE, 
+                        discount_factor = DISCOUNT_FACTOR, 
+                        goal_start=goal_start, 
+                        goal_end=goal_end, 
+                        has_continuous_action_space=HAS_CONTINUOUS_ACTION_SPACE,
+                        actor_model_weights=ACTOR_MODEL_WEIGHTS,
+                        critic_model_weights=CRITIC_MODEL_WEIGHTS,
+                        state_model_weights=STATE_MODEL_WEIGHTS)
+    elif AGENT_KIND == 'DQN':
+        raise Exception("DQN not implemented yet")
+    else:
+        raise Exception("Agent type not supported")
+    
     logging.info(f"Agent created")
 
     #save models
@@ -115,7 +149,7 @@ def main():
     for epoch in range(EPOCHS):
         logging.info(f"Starting epoch {epoch}\n\n")
         
-        state, episode_steps, episode_cumulative_distance = env.reset(), 0, 0
+        state, episode_steps, episode_cumulative_distance, episode_cumulative_reward = env.reset(), 0, 0, 0
         
         agent.reset()
         agent.observe(state)
@@ -135,7 +169,7 @@ def main():
             
             action = agent.select_action(exploration_on=True)
             logging.debug(f"Action selected: {action}, type: {type(action)}")
-            state, reward, done, info = env.step(action) # Reward not used
+            state, reward, done, info = env.step(action) # Reward not used (used just for logging)
             agent.observe(state)
 
             previous_distance = distance
@@ -146,6 +180,7 @@ def main():
             
 
             episode_cumulative_distance += distance
+            episode_cumulative_reward += reward
             
             agent.update_replay_memory(action, distance)
             
@@ -156,9 +191,10 @@ def main():
                 writer.add_scalar("Performances/Episode steps", episode_steps, episode)
                 writer.add_scalar("Performances/Episode final distance to goal", previous_distance, episode) # Printing previous distance not to have random location if goal is reached
                 writer.add_scalar("Performances/Episode cumulative distance", episode_cumulative_distance, episode)
-
+                writer.add_scalar("Performances/Episode cumulative reward", episode_cumulative_reward, episode)
+                
                 episode +=1
-                observation, episode_cumulative_distance, episode_steps = env.reset(), 0, 0
+                observation, episode_cumulative_distance, episode_steps, episode_cumulative_reward = env.reset(), 0, 0, 0
                 
                 logging.info(f"Starting episode {episode}")
                 

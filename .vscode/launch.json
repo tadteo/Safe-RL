@@ -5,10 +5,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: car_goal_hazards File",
+            "name": "Python: Experiments File",
             "type": "python",
             "request": "launch",
-            "program": "${workspaceFolder}/src/car_goal_hazards_acs.py",
+            "program": "${workspaceFolder}/src/run_experiment.py",
             "console": "integratedTerminal"
         }
     ]
