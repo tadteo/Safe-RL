@@ -24,9 +24,12 @@ class SACAgent(Agent):
                  gamma=0.99, # Discount factor. (Always between 0 and 1.)
                  polyak = 0.9,
                  learning_rate=0.001, # Learning rate (used for both policy and value learning).
-                 initial_variance=None, final_variance=None, 
+                 epsilon_start=1.0, # Initial value for epsilon in epsilon-greedy policies.
+                 epsilon_end=0.1, # Final value for epsilon in epsilon-greedy policies.
+                 epsilon_decay= 0.995, #decay factor for epsilon 
                  discount_factor=None,
                  has_continuous_action_space=True,
+                 reward_type="DISTANCE",
                  path_for_trained_models=None,
                  actor_model_weights=None,
                  critic_model_weights=None,
@@ -40,6 +43,9 @@ class SACAgent(Agent):
                 state_memory_size=state_memory_size,
                 batch_size=batch_size,
                 learning_rate=learning_rate,
+                epsilon_start=epsilon_start,
+                epsilon_end=epsilon_end,
+                epsilon_decay=epsilon_decay,
                 has_continuous_action_space=has_continuous_action_space,
                 path_for_trained_models=path_for_trained_models,
                 )
@@ -48,15 +54,13 @@ class SACAgent(Agent):
         self.critic_model_weights = critic_model_weights
         self.state_model_weights = state_model_weights
         
+        self.reward_type = reward_type
+        
         #Hyperparameters:
         self.alpha = alpha #used in train critic
         self.gamma = gamma #used in train critic
         self.polyak = polyak
-        
-        self.initial_variance = initial_variance
-        self.final_variance = final_variance
-        self.exploration_factor = 1.0
-        
+                
         self.discount_factor = discount_factor
         
         self.goal_start = goal_start
@@ -158,7 +162,7 @@ class SACAgent(Agent):
         with torch.no_grad():
             action_dist = self.actor_model(obs)
             if self.has_continuous_action_space:
-                if exploration_on and random.random() <= self.exploration_factor:
+                if exploration_on and random.random() <= self.epsilon:
                     action = action_dist.rsample()
                 else:
                     action = action_dist.mean
@@ -166,13 +170,13 @@ class SACAgent(Agent):
                 # action = action * self.action_range[0] #TODO add maximum range for actions
                 return action.detach().numpy()
             else:
-                if exploration_on and random.random() <= self.exploration_factor:
+                if exploration_on and random.random() <= self.epsilon:
                     action = Categorical(logits=action_dist).sample()
                 else:
                     action = torch.argmax(action_dist)
                 return int(action.detach().numpy())
     
-    def train_critic(self, previous_state_batch, state_batch, predictions_batch, distance_batch):
+    def train_critic(self, previous_state_batch, state_batch, predictions_batch, reward_batch):
         # Compute targets for the Q functions
         
         q1 = self.critic_model(state_batch)
@@ -195,7 +199,7 @@ class SACAgent(Agent):
             q1_pi_target = self.target_critic_1(state_batch)
             q2_pi_target = self.target_critic_2(state_batch)
             q_pi_target = torch.min(q1_pi_target, q2_pi_target)
-            y = distance_batch + self.gamma*(q_pi_target-self.alpha*log_prob)
+            y = reward_batch + self.gamma*(q_pi_target-self.alpha*log_prob)
 
         loss_critic_1 = ((q1 - y)**2).mean() 
         loss_critic_2 = ((q2 - y)**2).mean()
@@ -269,22 +273,29 @@ class SACAgent(Agent):
         
         tmp = np.array(mini_batch.action)        
         action_batch = torch.tensor(tmp).float().to(self.device)
+        distance_batch = torch.tensor(mini_batch.distance).float().to(self.device)
+        reward_batch = torch.tensor(mini_batch.reward).float().to(self.device)
+        
         distance_critic_batch = torch.tensor(mini_batch.distance_critic).float().to(self.device)
         distance_with_state_prediction_batch = torch.tensor(mini_batch.distance_with_state_prediction).float().to(self.device)
         # distance_with_state_prediction_batch = torch.stack(mini_batch.distance_with_state_prediction).to(self.device).float()
 
-        loss_critic = self.train_critic(previous_state_batch, state_batch, mini_batch.predictions, distance_critic_batch)
+        if self.reward_type == "DISTANCE":
+            loss_critic = self.train_critic(previous_state_batch, state_batch, mini_batch.predictions, distance_batch)
+        elif self.reward_type == "REWARD":
+            loss_critic = self.train_critic(previous_state_batch, state_batch, mini_batch.predictions, reward_batch)
+        else:
+            raise ValueError("Invalid reward type")
         loss_state = self.train_state(previous_state_batch, state_batch, action_batch)
         loss_actor = self.train_actor(state_batch)
         
-        self.exploration_factor -= self.exploration_factor*0.05
-
         for target_param, param in zip(self.target_critic_1.parameters(), self.critic_model.parameters()):
             target_param.data.copy_(self.polyak * target_param.data + (1.0 - self.polyak) * param.data)
         
         for target_param, param in zip(self.target_critic_2.parameters(), self.critic_model_2.parameters()):
             target_param.data.copy_(self.polyak * target_param.data + (1.0 - self.polyak) * param.data)
         
+        self.update_epsilon()
                 
-        return loss_actor.item(), loss_critic.item(), loss_state.item()
+        return loss_actor.item(), loss_critic.item(), loss_state.item(), self.epsilon
 

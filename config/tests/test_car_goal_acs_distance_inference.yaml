@@ -7,6 +7,7 @@ render : False
 logging_level : "NO_LOG"
 
 agent_kind : 'ACS'
+reward_kind: 'DISTANCE'
 
 environment:
   #The environment to use
@@ -42,3 +43,6 @@ has_continuous_action_space : True
 
 state_in_memory: 1
 learning_rate: 0.001
+epsilon_start: 0.9
+epsilon_end: 0.05
+epsilon_decay: 0.9

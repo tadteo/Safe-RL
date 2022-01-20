@@ -2,11 +2,12 @@
 
 experiment_name : 'Test_CarGoalHazardSAC'
 
-training: True
+training: False
 render : False
 logging_level : "NO_LOG"
 
 agent_kind : 'SAC'
+reward_kind: 'DISTANCE'
 
 environment:
   #The environment to use
@@ -37,7 +38,9 @@ alpha : 0.2
 gamma : 0.99
 polyak : 0.995
 learning_rate : 0.001
-
+epsilon_start : 0.9
+epsilon_end : 0.05
+epsilon_decay : 0.995
 # OFF POLICY parameters
 off_policy : True
 update_frequency: 64 #execute a step of training after this number of environment steps

@@ -5,42 +5,64 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Car_Goal_ACS",
+            "name": "Car_Goal_ACS_distance",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/src/run_experiment.py",
             "args": [
-                "car_goal_acs.yaml"
+                "car_goal_acs_distance.yaml"
             ],
             "console": "integratedTerminal"
         },
         {
-            "name": "Cartpole ACS",
+            "name": "Cartpole ACS distance",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/src/run_experiment.py",
             "args": [
-                "cartpole_acs.yaml"
+                "cartpole_acs_distance.yaml"
             ],
             "console": "integratedTerminal"
         },
         {
-            "name": "Car Goal SAC",
+            "name": "Car Goal SAC distance",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/src/run_experiment.py",
             "args": [
-                "car_goal_sac.yaml"
+                "car_goal_sac_distance.yaml"
             ],
             "console": "integratedTerminal"
-        }
+        },
         {
-            "name": "Cartpole SAC",
+            "name": "Cartpole SAC distance",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/src/run_experiment.py",
             "args": [
-                "cartpole_sac.yaml"
+                "cartpole_sac_distance.yaml"
+            ],
+            "console": "integratedTerminal"
+        },
+        
+        // REWARD BASED
+        {
+            "name": "Car Goal SAC reward",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/run_experiment.py",
+            "args": [
+                "car_goal_sac_reward.yaml"
+            ],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Cartpole SAC reward",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/run_experiment.py",
+            "args": [
+                "cartpole_sac_reward.yaml"
             ],
             "console": "integratedTerminal"
         }

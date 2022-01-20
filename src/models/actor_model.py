@@ -63,7 +63,7 @@ class ActorModel(nn.Module):
             self.layers.append(nn.Linear(layers_sizes[-1],2*output_size))
         else:
             self.layers.append(nn.Linear(layers_sizes[-1],output_size))
-            self.layers.append(nn.Softmax())
+            self.layers.append(nn.Softmax(dim=-1))
             
         self.net = nn.Sequential(*self.layers)
         

@@ -1,12 +1,13 @@
 # Configuaration for the goal hazard car environement
 
-experiment_name : 'Test_CarGoalHazardACS'
+experiment_name : 'Test_CarGoalHazardSAC'
 
 training: True
 render : False
 logging_level : "NO_LOG"
 
-agent_kind : 'ACS'
+agent_kind : 'SAC'
+reward_kind: 'REWARD'
 
 environment:
   #The environment to use
@@ -20,7 +21,7 @@ environment:
   lidar_num_bins : 16
   hazards_num : 4
   observe_sensors : False # Disable visualizations of internal sensors for simpler state management    
-  continue_goal: True  # If true, draw a new goal after achievement
+  continue_goal: True # If true, draw a new goal after achievement
   lidar_max_dist: 10  # Maximum distance for lidar sensitivity (if None, exponential distance)
 
 has_continuous_action_space : True
@@ -32,9 +33,14 @@ has_continuous_action_space : True
 epochs : 1
 steps_per_epoch : 1000
 
-#ON POLICY parameters
-on_policy : False
-
+#agent hyperparameters
+alpha : 0.2
+gamma : 0.99
+polyak : 0.995
+learning_rate : 0.001
+epsilon_start : 0.9
+epsilon_end : 0.05
+epsilon_decay : 0.995
 # OFF POLICY parameters
 off_policy : True
 update_frequency: 64 #execute a step of training after this number of environment steps
@@ -42,11 +48,5 @@ steps_in_future:  10
 batch_size: 32
 
 discount_factor: 0.99
-initial_variance: 1000
-final_variance: 0.0001
-
 
 state_in_memory: 3 #number of states observed used as single observation
-
-#Hyperparameters
-learning_rate : 0.001

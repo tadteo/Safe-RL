@@ -3,6 +3,7 @@
 from collections import namedtuple, deque
 import random
 import math
+import numpy as np
 
 def calculate_distance(state,goal_start,goal_end):
     #calculate the distance
@@ -17,7 +18,8 @@ def calculate_distance(state,goal_start,goal_end):
     # print(f"Goal: {goal}")
     
     # print(max(goal))
-    distance = max(max(goal),0.00001)
+    # distance = - max(max(goal),0.00001)
+    distance = - np.linalg.norm(goal-np.zeros_like(goal))
     # if(max(hazards)>0.8):
     #     distance -=max(max(hazards),0.00001) #min(10/(max(goal)),100)
     # print(f"Distance to goal: {distance_to_goal}")
@@ -45,24 +47,41 @@ def calculate_distance_2(previous_state,state):
     
     return distance
 
-Prediction = namedtuple('Prediction', ("action", 
+Prediction = namedtuple('Prediction', ("action",
+                                       "reward",
                                        "distance", 
                                        "state"))
 
 Transition = namedtuple('Transition', ('state', 
                                        'previous_state', 
                                        'action',
+                                       'reward',
                                        'distance',
                                        'distance_critic', 
                                        'distance_with_state_prediction',  
-                                       'predictions'))
+                                       'predictions',
+                                       'done'))
 
 class ReplayMemory(object):
     def __init__(self, capacity):
         self.memory = deque(maxlen=capacity)
 
-    def push(self, *args):
-        self.memory.append(Transition(*args))  #https://pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
+    # def push(self, *args):
+    #     self.memory.append(Transition(*args))  #https://pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
+    def push(self, state, previous_state, action, reward, distance, distance_critic, distance_with_state_prediction, predictions, done):
+        t = Transition(
+            state=state,
+            previous_state=previous_state,
+            action=action,
+            reward=reward,
+            distance=distance,
+            distance_critic=distance_critic,
+            distance_with_state_prediction=distance_with_state_prediction,
+            predictions = predictions,
+            done=done)
+        
+        self.memory.append(t)  #https://pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
+    
     
     def sample(self, batch_size):
         return random.sample(self.memory, batch_size)
@@ -71,27 +90,37 @@ class ReplayMemory(object):
         return len(self.memory)
 
 #Logging and Tensorboard
-def write_losses_log(loss_actor, loss_critic, loss_state, total_steps, episode, writer, agent):
-    writer.add_scalar("Loss/Loss: actor_off_policy", loss_actor, total_steps)
-    writer.add_scalar("Loss/Loss: critic_off_policy", loss_critic, total_steps)
-    writer.add_scalar("Loss/Loss: state_off_policy", loss_state, total_steps)
+def write_losses_log(loss_actor, loss_critic, loss_state, total_steps, writer, agent):
+    writer.add_scalar("Loss/Loss: actor", loss_actor, total_steps)
+    writer.add_scalar("Loss/Loss: critic", loss_critic, total_steps)
+    writer.add_scalar("Loss/Loss: state", loss_state, total_steps)
 
-    # if(episode%1==0):
     for name,weight in agent.actor_model.named_parameters():
-        writer.add_histogram(name,weight,episode)
-        writer.add_histogram("actor/"+name+"/weight",weight,episode)
-        writer.add_histogram("actor/"+name+"/grad",weight.grad,episode)
+        writer.add_histogram(name,weight,total_steps)
+        writer.add_histogram("actor/"+name+"/weight",weight,total_steps)
+        writer.add_histogram("actor/"+name+"/grad",weight.grad,total_steps)
         
     for name,weight in agent.critic_model.named_parameters():
-        writer.add_histogram(name,weight,episode)
-        writer.add_histogram("critic/"+name+"/weight",weight,episode)
-        writer.add_histogram("critic/"+name+"/grad",weight.grad,episode)
+        writer.add_histogram(name,weight,total_steps)
+        writer.add_histogram("critic/"+name+"/weight",weight,total_steps)
+        writer.add_histogram("critic/"+name+"/grad",weight.grad,total_steps)
     
     for name,weight in agent.state_model.named_parameters():
-        writer.add_histogram(name,weight,episode)
-        writer.add_histogram("state/"+name+"/weight",weight,episode)
-        writer.add_histogram("critic/"+name+"/grad",weight.grad,episode)
+        writer.add_histogram(name,weight,total_steps)
+        writer.add_histogram("state/"+name+"/weight",weight,total_steps)
+        writer.add_histogram("critic/"+name+"/grad",weight.grad,total_steps)
 
+def write_losses_DQN(loss_critic, total_steps, writer, agent):
+    writer.add_scalar("Loss/Loss: critic_off_policy", loss_critic, total_steps)
+
+    for name,weight in agent.dqn_model.named_parameters():
+        writer.add_histogram(name,weight,total_steps)
+        writer.add_histogram("dqn/"+name+"/weight",weight,total_steps)
+        writer.add_histogram("dqn/"+name+"/grad",weight.grad,total_steps)
+
+def write_epsilon(epsilon, total_steps, writer):
+    writer.add_scalar("Exploration/Epsilon", epsilon, total_steps)
+    
 #general utilities
 def read_config(config_file):
     import os,yaml

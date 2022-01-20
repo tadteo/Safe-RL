@@ -5,6 +5,7 @@ experiment_name : "CarGoalHazardACS_inference"
 training: False
 
 agent_kind : 'ACS'
+reward_kind: 'DISTANCE'
 
 environment:
   #The environment to use

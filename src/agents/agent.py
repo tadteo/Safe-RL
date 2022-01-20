@@ -16,6 +16,9 @@ class Agent(object):
                  state_memory_size = 1,
                  batch_size=32,
                  learning_rate=0.001,
+                 epsilon_start=1.0,
+                 epsilon_end=0.05,
+                 epsilon_decay=0.995,
                  replay_memory_size=10000,
                  has_continuous_action_space=True,
                  path_for_trained_models=None,
@@ -33,7 +36,10 @@ class Agent(object):
         
         #Hyperparameters
         self.learning_rate = learning_rate
-
+        self.epsilon = epsilon_start
+        self.epsilon_end = epsilon_end
+        self.epsilon_decay = epsilon_decay
+        
         #Memory used as observation --> the observation can contatin multiple states
         self.state_memory_size = state_memory_size
         self.state_memory = deque(maxlen=state_memory_size)
@@ -75,16 +81,20 @@ class Agent(object):
     def select_action(self, exploration_on=True):
         raise NotImplementedError
     
-    def update_replay_memory(self, action, distance):
+    def update_replay_memory(self, action, reward, distance, done):
         predictions = []
-        self.replay_memory_buffer.push(self.state_memory, 
-                                       self.previous_state_memory,
-                                       action, #action
-                                       0, #distance_critic
-                                       0, #distance_with_state_prediction
-                                       distance, #optimal_distance is the distance to goal when you are enough far away from the obstacles
-                                       predictions
-                                       )
+        self.replay_memory_buffer.push(state=self.state_memory, 
+                                       previous_state=self.previous_state_memory,
+                                       action=action, #action
+                                       reward=reward,
+                                       distance=distance, #actual distance to goal
+                                       distance_critic=0, #distance_critic distance predicted
+                                       distance_with_state_prediction=0, #distance_with_state_prediction
+                                       predictions=predictions,
+                                       done=done)
+    
+    def update_epsilon(self):
+        self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
     
     #Neural Networks methods
     

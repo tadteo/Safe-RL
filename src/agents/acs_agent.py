@@ -19,7 +19,9 @@ class ACSAgent(Agent):
                  state_memory_size=1,
                  batch_size=32,
                  learning_rate=0.001,
-                 initial_variance=None, final_variance=None, 
+                 epsilon_start=1.0, #initila epsilon for epsilon-greedy policy exploration
+                 epsilon_end=0.01,  #final epsilon for epsilon-greedy policy exploration
+                 epsilon_decay=0.995, #epsilon decay rate
                  discount_factor=None,
                  has_continuous_action_space=True,
                  path_for_trained_models=None,
@@ -35,6 +37,9 @@ class ACSAgent(Agent):
                 state_memory_size=state_memory_size,
                 batch_size=batch_size,
                 learning_rate=learning_rate,
+                epsilon_start=epsilon_start,
+                epsilon_end=epsilon_end,
+                epsilon_decay=epsilon_decay,
                 has_continuous_action_space=has_continuous_action_space,
                 path_for_trained_models=path_for_trained_models,
                 )
@@ -43,19 +48,12 @@ class ACSAgent(Agent):
         self.critic_model_weights = critic_model_weights
         self.state_model_weights = state_model_weights
         
-        self.initial_variance = initial_variance
-        self.final_variance = final_variance
-        self.exploration_factor = 1.0
-        
         self.discount_factor = discount_factor
         
         self.goal_start = goal_start
         self.goal_end = goal_end
                 
-        self.actor_optimizer = torch.optim.Adam(self.actor_model.parameters(), lr=self.learning_rate)
-        self.critic_optimizer = torch.optim.Adam(self.critic_model.parameters(), lr=self.learning_rate)
-        self.state_optimizer = torch.optim.Adam(self.state_model.parameters(), lr=self.learning_rate)
-
+       
     def create_networks_from_scratch(self):
         self.actor_model = ActorModel(input_size=self.state_size*self.state_memory_size,output_size=self.action_size, has_continuous_action_space=self.has_continuous_action_space)
         self.critic_model = CriticModel(input_size=self.state_size*self.state_memory_size,output_size=(1))
@@ -64,6 +62,10 @@ class ACSAgent(Agent):
         self.critic_model = self.critic_model.to(self.device)
         self.state_model = self.state_model.to(self.device)
         
+        self.actor_optimizer = torch.optim.Adam(self.actor_model.parameters(), lr=self.learning_rate)
+        self.critic_optimizer = torch.optim.Adam(self.critic_model.parameters(), lr=self.learning_rate)
+        self.state_optimizer = torch.optim.Adam(self.state_model.parameters(), lr=self.learning_rate)
+   
     def create_networks_from_weights(self, path_for_trained_models, data):
         import os
 
@@ -88,6 +90,10 @@ class ACSAgent(Agent):
         self.critic_model = self.critic_model.to(self.device)
         self.state_model = self.state_model.to(self.device)
         
+        self.actor_optimizer = torch.optim.Adam(self.actor_model.parameters(), lr=self.learning_rate)
+        self.critic_optimizer = torch.optim.Adam(self.critic_model.parameters(), lr=self.learning_rate)
+        self.state_optimizer = torch.optim.Adam(self.state_model.parameters(), lr=self.learning_rate)
+
     def save_models(self, experiment_name, epoch, path_for_trained_models=None):
         import os
         import json
@@ -135,21 +141,19 @@ class ACSAgent(Agent):
         with torch.no_grad():
             action_dist = self.actor_model(obs)
             if self.has_continuous_action_space:
-                if exploration_on and random.random() <= self.exploration_factor:
+                if exploration_on and random.random() < self.epsilon:
                     action = action_dist.rsample()
                 else:
                     action = action_dist.mean
                 return action.detach().numpy()
             else:
-                if exploration_on and random.random() <= self.exploration_factor:
+                if exploration_on and random.random() > self.epsilon:
                     action = Categorical(logits=action_dist).sample()
                 else:
                     action = torch.argmax(action_dist)
                 return int(action.detach().numpy())
-
-        
-    
-    def train_critic(self, previous_state_batch, state_batch, predictions_batch, distance_batch):
+  
+    def train_critic(self, previous_state_batch, state_batch, distance_batch):
         """Train the critic model"""
         criterion_critic = nn.MSELoss()
         # loss_critic = criterion_critic(self.critic_model(previous_state_batch),target_Q) #TODO: Extract also the distances in the predictions t have  a mix of distances with and without predictions
@@ -162,7 +166,7 @@ class ACSAgent(Agent):
         
         return loss_critic
     
-    def train_actor(self, previous_obs, obs,  action, Q):
+    def train_actor(self, obs):
         
         action_dist = self.actor_model(obs)
         # previous_action_dist = self.actor_model(previous_obs)
@@ -240,16 +244,17 @@ class ACSAgent(Agent):
         
         tmp = np.array(mini_batch.action)        
         action_batch = torch.tensor(tmp).float().to(self.device)
+        distance_batch = torch.tensor(mini_batch.distance).float().to(self.device)
         distance_critic_batch = torch.tensor(mini_batch.distance_critic).float().to(self.device)
         distance_with_state_prediction_batch = torch.tensor(mini_batch.distance_with_state_prediction).float().to(self.device)
         # distance_with_state_prediction_batch = torch.stack(mini_batch.distance_with_state_prediction).to(self.device).float()
         # print(f"Optimal distance batch: {distance_batch.shape}")
 
-        loss_critic = self.train_critic(previous_state_batch, state_batch, mini_batch.predictions, distance_critic_batch)
+        loss_critic = self.train_critic(previous_state_batch, state_batch, distance_batch)
         loss_state = self.train_state(previous_state_batch, state_batch, action_batch)
-        loss_actor = self.train_actor(previous_state_batch, state_batch, action_batch, distance_critic_batch)
+        loss_actor = self.train_actor(state_batch)
         
-        self.exploration_factor -= self.exploration_factor*0.05
+        self.update_epsilon()
                 
-        return loss_actor.item(), loss_critic.item(), loss_state.item()
+        return loss_actor.item(), loss_critic.item(), loss_state.item(), self.epsilon
 

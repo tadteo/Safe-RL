@@ -10,6 +10,7 @@ import gym
 
 from agents.acs_agent import ACSAgent
 from agents.sac_agent import SACAgent
+from agents.dqn_agent import DQNAgent
 
 from utils import *
 from torch.utils.tensorboard import SummaryWriter
@@ -25,23 +26,22 @@ def run_experiment(config):
     STEPS_PER_EPOCH = config.get('steps_per_epoch')
     UPDATE_FREQUENCY = config.get('update_frequency')
 
-    AGENT_KIND = config.get('agent_kind') #'SAC' or 'ACS'
-
+    AGENT_KIND = config.get('agent_kind') #'SAC' or 'ACS' or 'DQN'
+    REWARD_TYPE = config.get('reward_kind') #'reward' or 'distance'
     STEPS_IN_FUTURE = config.get('steps_in_future')
 
     #Agent hyperparameters
     LEARNING_RATE = config.get('learning_rate') 
+    EPSILON_START = config.get('epsilon_start')
+    EPSILON_END = config.get('epsilon_end')
+    EPSILON_DECAY = config.get('epsilon_decay')
+    
     ALPHA = config.get('alpha')
     GAMMA = config.get('gamma')
     POLYAK = config.get('polyak')
-
-    MIN_EPSILON = config.get('min_epsilon')
-
+    
     ON_POLICY = config.get('on_policy')
     OFF_POLICY = config.get('off_policy')
-
-    INITIAL_VARIANCE = config.get('initial_variance')
-    FINAL_VARIANCE = config.get('final_variance')
 
     DISCOUNT_FACTOR = config.get('discount_factor')
     BATCH_SIZE = config.get('batch_size')
@@ -54,7 +54,8 @@ def run_experiment(config):
     ACTOR_MODEL_WEIGHTS = config.get('actor_model_weights')
     CRITIC_MODEL_WEIGHTS = config.get('critic_model_weights')
     STATE_MODEL_WEIGHTS = config.get('state_model_weights')
-
+    DQN_MODEL_WEIGHTS = config.get('dqn_model_weights')
+    
     TRAINING = config.get('training')
     
     LOGGING_LVL = config.get('logging_level')
@@ -69,7 +70,7 @@ def run_experiment(config):
         logging.basicConfig(filename='/tmp/experiment_log.txt', level=logging.INFO)
     else:
         logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
-        
+
     actual_path = os.path.dirname(os.path.realpath(__file__))
 
 ####Start Experiment###########################################################
@@ -100,14 +101,18 @@ def run_experiment(config):
         
     logging.debug(f'Creating agent')
     if AGENT_KIND == 'ACS':
+        if REWARD_TYPE == 'REWARD':
+            raise Exception("Reward kind not supported for ACS")
+            sys.exit(1)
         agent = ACSAgent(state_size=state_size, 
                         action_size=action_size, 
                         state_memory_size=state_memory_size,
                         batch_size=BATCH_SIZE,
                         learning_rate=LEARNING_RATE,
-                        initial_variance=INITIAL_VARIANCE, 
-                        final_variance=FINAL_VARIANCE, 
-                        discount_factor = DISCOUNT_FACTOR, 
+                        discount_factor = DISCOUNT_FACTOR,
+                        epsilon_start=EPSILON_START,
+                        epsilon_end=EPSILON_END,
+                        epsilon_decay=EPSILON_DECAY,
                         goal_start=goal_start, 
                         goal_end=goal_end, 
                         has_continuous_action_space=HAS_CONTINUOUS_ACTION_SPACE,
@@ -121,20 +126,38 @@ def run_experiment(config):
                         state_memory_size=state_memory_size,
                         batch_size=BATCH_SIZE,
                         learning_rate=LEARNING_RATE,
+                        epsilon_start=EPSILON_START,
+                        epsilon_end=EPSILON_END,
+                        epsilon_decay=EPSILON_DECAY,
                         alpha=ALPHA,
                         gamma=GAMMA,
                         polyak=POLYAK,
-                        initial_variance=INITIAL_VARIANCE, 
-                        final_variance=FINAL_VARIANCE, 
                         discount_factor = DISCOUNT_FACTOR, 
                         goal_start=goal_start, 
                         goal_end=goal_end, 
                         has_continuous_action_space=HAS_CONTINUOUS_ACTION_SPACE,
+                        reward_type=REWARD_TYPE,
                         actor_model_weights=ACTOR_MODEL_WEIGHTS,
                         critic_model_weights=CRITIC_MODEL_WEIGHTS,
                         state_model_weights=STATE_MODEL_WEIGHTS)
     elif AGENT_KIND == 'DQN':
-        raise Exception("DQN not implemented yet")
+        if HAS_CONTINUOUS_ACTION_SPACE:
+            raise Exception("DQN does not support continuous action spaces")
+        else:
+            agent = DQNAgent(state_size=state_size,
+                             action_size=action_size,
+                             state_memory_size=state_memory_size,
+                             batch_size=BATCH_SIZE,
+                             learning_rate=LEARNING_RATE,
+                             epsilon_start=EPSILON_START,
+                             epsilon_end=EPSILON_END,
+                             epsilon_decay=EPSILON_DECAY,
+                             gamma=GAMMA,
+                             has_continuous_action_space = HAS_CONTINUOUS_ACTION_SPACE,
+                             reward_type=REWARD_TYPE,
+                             dqn_model_weights=DQN_MODEL_WEIGHTS,
+                             goal_start=goal_start,
+                             goal_end=goal_end)
     else:
         raise Exception("Agent type not supported")
     
@@ -179,38 +202,41 @@ def run_experiment(config):
             distance = calculate_distance(state, goal_start, goal_end)
 
             if episode_steps%100 == 0:
-                logging.debug(f"{episode_steps}. The distance to goal is: {distance} \n")
+                logging.debug(f"\r{episode_steps}. The distance to goal is: {distance}")
             
 
             episode_cumulative_distance += distance
             episode_cumulative_reward += reward
             
-            agent.update_replay_memory(action, distance)
-            # agent.update_replay_memory(action, reward)
-
-                        
+            agent.update_replay_memory(action, reward, distance, done)
+                    
             #Reset the environment and save data
             if distance >= 99:
                 done = True
             if done or (t == STEPS_PER_EPOCH-1):    
-                writer.add_scalar("Performances/Episode steps", episode_steps, episode)
-                writer.add_scalar("Performances/Episode final distance to goal", previous_distance, episode) # Printing previous distance not to have random location if goal is reached
-                writer.add_scalar("Performances/Episode cumulative distance", episode_cumulative_distance, episode)
-                writer.add_scalar("Performances/Episode cumulative reward", episode_cumulative_reward, episode)
+                writer.add_scalar("Performances/Episode steps", episode_steps, total_steps)
+                writer.add_scalar("Performances/Episode final distance to goal", previous_distance, total_steps) # Printing previous distance not to have random location if goal is reached
+                writer.add_scalar("Performances/Episode cumulative distance", episode_cumulative_distance, total_steps)
+                writer.add_scalar("Performances/Episode cumulative reward", episode_cumulative_reward, total_steps)
                 
                 episode +=1
                 observation, episode_cumulative_distance, episode_steps, episode_cumulative_reward = env.reset(), 0, 0, 0
                 
-                logging.info(f"Starting episode {episode}")
+                print(f"Starting episode {episode}", end="\r")
                 
             if TRAINING:
                 if ON_POLICY:
                     agent.train_on_policy()
                 if OFF_POLICY:
                     if total_steps % UPDATE_FREQUENCY == 0:
-                        loss_actor, loss_critic, loss_state = agent.train_step()
-                        write_losses_log(loss_actor, loss_critic, loss_state, total_steps, episode, writer, agent)
-            
+                        loss_actor, loss_critic, loss_state, epsilon= agent.train_step()
+                        if AGENT_KIND == 'SAC' or AGENT_KIND == 'ACS':
+                            write_losses_log(loss_actor, loss_critic, loss_state, total_steps, writer, agent)
+                        if AGENT_KIND == 'DQN':
+                            write_losses_DQN(loss_critic, total_steps, writer, agent)
+                        
+                        write_epsilon(epsilon, total_steps, writer)
+                            
         if epoch % 5 == 0 and epoch != 0:
             agent.save_models(experiment_name,epoch)
     

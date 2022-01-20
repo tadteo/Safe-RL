@@ -1,42 +1,37 @@
 # Configuaration for the goal hazard car environement
 
-experiment_name : 'Test_Cartpole_SAC'
+experiment_name : 'Test_Cartpole_DQN_reward_inference'
 
 training: True
 render : False
-logging_level : "NO_LOG"
-
 has_continuous_action_space : False
 
-agent_kind : 'SAC'
+agent_kind : 'DQN'
+reward_kind: 'REWARD'
 
 environment: 'CartPole-v1'
 
 #the start and the end of the section of the vector we are interested in
-# goal_start: 0
-# goal_end: 0
+goal_start: 0
+goal_end: 0
 
 epochs : 1
-steps_per_epoch : 1000
+steps_per_epoch : 100
 
 #ON POLICY parameters
 on_policy : False
 
 # OFF POLICY parameters
 off_policy : True
-update_frequency: 64 #execute a step of training after this number of environment steps
+update_frequency: 128 #execute a step of training after this number of environment steps
 steps_in_future:  10
-batch_size: 32
+batch_size: 64
 
-discount_factor: 0.99
-initial_variance: 1000
-final_variance: 0.0001
-
-
-state_in_memory: 3
+state_in_memory: 5
 
 #agent hyperparameters
-alpha : 0.2
-gamma : 0.99
-polyak : 0.995
 learning_rate : 0.001
+epsilon_start : 0.9
+epsilon_end : 0.05
+epsilon_decay : 0.995
+gamma : 0.99
