@@ -40,6 +40,8 @@ def run_experiment(config):
     GAMMA = config.get('gamma')
     POLYAK = config.get('polyak')
     
+    UPDATE_TARGET_FREQUENCY = config.get('update_target_frequency')
+    
     ON_POLICY = config.get('on_policy')
     OFF_POLICY = config.get('off_policy')
 
@@ -153,6 +155,7 @@ def run_experiment(config):
                              epsilon_end=EPSILON_END,
                              epsilon_decay=EPSILON_DECAY,
                              gamma=GAMMA,
+                             update_target_frequency=UPDATE_TARGET_FREQUENCY,
                              has_continuous_action_space = HAS_CONTINUOUS_ACTION_SPACE,
                              reward_type=REWARD_TYPE,
                              dqn_model_weights=DQN_MODEL_WEIGHTS,
@@ -171,7 +174,13 @@ def run_experiment(config):
     
     logging.info(f'Starting training')
     total_steps = 0
-    episode = 0 
+    episode = 0
+    
+    ### for debug
+    random_action_counter = 1
+    deterministic_action_counter = 1
+    ###
+    
     for epoch in range(EPOCHS):
         logging.info(f"Starting epoch {epoch}\n\n")
         
@@ -193,7 +202,12 @@ def run_experiment(config):
             # #predict future:
             predictions = []
             
-            action = agent.select_action(exploration_on=True)
+            action, action_info = agent.select_action(exploration_on=True)
+            if(action_info=="random"):
+                random_action_counter += 1
+            elif(action_info=="deterministic"):
+                deterministic_action_counter += 1
+            
             # logging.debug(f"Action selected: {action}, type: {type(action)}")
             state, reward, done, info = env.step(action) # Reward not used (used just for logging)
             agent.observe(state)
@@ -218,6 +232,11 @@ def run_experiment(config):
                 writer.add_scalar("Performances/Episode final distance to goal", previous_distance, total_steps) # Printing previous distance not to have random location if goal is reached
                 writer.add_scalar("Performances/Episode cumulative distance", episode_cumulative_distance, total_steps)
                 writer.add_scalar("Performances/Episode cumulative reward", episode_cumulative_reward, total_steps)
+                
+                ### for debug
+                writer.add_scalar("Debug/ Random/Deterministic action counter", random_action_counter/deterministic_action_counter, total_steps)
+                # writer.add_scalar("Debug/Deterministic action counter", deterministic_action_counter, total_steps)
+                ###
                 
                 episode +=1
                 observation, episode_cumulative_distance, episode_steps, episode_cumulative_reward = env.reset(), 0, 0, 0

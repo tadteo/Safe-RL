@@ -17,7 +17,7 @@ class DQNModel(nn.Module):
         
         self.layers = []
         self.layers.append(nn.Flatten())
-        first_layer = nn.Linear(in_features=input_size, out_features=layers_sizes[0], bias=False)
+        first_layer = nn.Linear(in_features=input_size, out_features=layers_sizes[0])
         self.layers.append(first_layer)
         self.layers.append(activation)
         for i in range(1,len(layers_sizes)):
@@ -29,6 +29,8 @@ class DQNModel(nn.Module):
         self.net = nn.Sequential(*self.layers)
         
         self.outputs = dict()
+        
+        print(self.net)
         
     def forward(self, input):
         if(type(input) == np.ndarray):

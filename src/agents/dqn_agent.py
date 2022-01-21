@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from turtle import update
 import torch
 import numpy as np
 from torch import nn, optim
@@ -17,7 +18,8 @@ class DQNAgent(Agent):
                  state_memory_size=1,
                  batch_size=32,
                  learning_rate=0.001,
-                 gamma=0.99,
+                 gamma=0.99, #discount factor
+                 update_target_frequency=5, #after how many training steps the target network is updated
                  epsilon_start=1.0,
                  epsilon_end=0.01,
                  epsilon_decay=0.995,
@@ -43,7 +45,6 @@ class DQNAgent(Agent):
         
         self.dqn_model_weights = dqn_model_weights
 
-        
         self.reward_type = reward_type
         
         #Hyperparameters
@@ -53,7 +54,10 @@ class DQNAgent(Agent):
         self.goal_end = goal_end
                 
         self.model_optimizer = torch.optim.Adam(self.dqn_model.parameters(), lr=self.learning_rate)
-
+        
+        self.update_target_model_counter = 0
+        self.update_target_frequency = update_target_frequency
+        
     def create_networks_from_scratch(self):
         self.dqn_model = DQNModel(input_size=self.state_size*self.state_memory_size,output_size=self.action_size)
         self.dqn_model = self.dqn_model.to(self.device)
@@ -115,13 +119,15 @@ class DQNAgent(Agent):
         obs = list(self.state_memory)
         obs = torch.stack(obs).to(self.device)
         obs = obs[None,:]
-        with torch.no_grad():
-            if exploration_on and random.random() < self.epsilon:
-                action = random.randrange(self.action_size)
-            else:
-                Qs = self.dqn_model(obs)
-                action = int(torch.argmax(Qs).item())
-            return action        
+        
+        if exploration_on and random.random() < self.epsilon:
+            action = random.randrange(self.action_size)
+            info = "random"
+        else:
+            Qs = self.dqn_model(obs)
+            action = int(torch.argmax(Qs).item())
+            info = "deterministic"
+        return action, info
 
     def train_step(self):
         
@@ -157,66 +163,54 @@ class DQNAgent(Agent):
         distance_with_state_prediction_batch = torch.tensor(mini_batch.distance_with_state_prediction).float().to(self.device)
         done_batch = torch.tensor(mini_batch.done).float().to(self.device)
         
+            
+        
+        # Training Step with reward batch DQN
+        
+        # Compute a mask of non-final states and concatenate the batch elements
+        # (a final state would've been the one after which simulation ended)
+        non_final_mask = torch.tensor(tuple(map(lambda s: s[-1] is not None,
+                                            state_batch)), device=self.device, dtype=torch.bool)
+        
+        # print(f"non_final_mask: {non_final_mask}")
+        # print(f"State batch: {state_batch.shape}")
+        non_final_next_states = torch.stack([s for s in state_batch
+                                                    if s is not None])
+        
+        # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
+        # columns of actions taken. These are the actions which would've been taken
+        # for each batch state according to policy_net
+        # print(f"action_batch shape: {action_batch.shape}")
+        # print(f"self.dqn_model(state_batch).shape: {self.dqn_model(state_batch).shape}")
+        state_action_values = self.dqn_model(state_batch).gather(1, action_batch.view(-1, 1))
+        
+        # Compute V(s_{t+1}) for all next states.
+        # Expected values of actions for non_final_next_states are computed based
+        # on the "older" target_net; selecting their best reward with max(1)[0].
+        # This is merged based on the mask, such that we'll have either the expected
+        # state value or 0 in case the state was final.
+        state_values = torch.zeros(self.batch_size, device=self.device)
+        # print(f"Non final next states = {non_final_next_states.shape}")
+        state_values[non_final_mask] = self.target_model(non_final_next_states).max(1)[0].detach()
+        # Compute the expected Q values
         if self.reward_type == "DISTANCE":
-            # Training Step with distance batch
-            target = self.dqn_model(previous_state_batch)
-            Q_future = torch.min(self.dqn_model(state_batch),-1)[0]
-            for i in range(len(state_batch)):
-                action_index=int(action_batch[i].item())
-                target[i][action_index] = distance_batch[i] + Q_future[i]-distance_batch[i]
-            
-            criterion_Q = torch.nn.MSELoss()
-            # Loss_Q = criterion_Q(target, self.dqn_model(previous_state_batch))
-            loss_Q = criterion_Q(target, self.dqn_model(state_batch))
-            
-            self.model_optimizer.zero_grad()
-            self.dqn_model.zero_grad()
-            loss_Q.backward()
-            self.model_optimizer.step()
+            expected_state_action_values = (state_values * self.gamma) + distance_batch
         elif self.reward_type == "REWARD":
-            # Training Step with reward batch DQN
-            target = self.dqn_model(previous_state_batch)
-           
-            # Compute a mask of non-final states and concatenate the batch elements
-            # (a final state would've been the one after which simulation ended)
-            non_final_mask = torch.tensor(tuple(map(lambda s: s[-1] is not None,
-                                                state_batch)), device=self.device, dtype=torch.bool)
-            
-            # print(f"non_final_mask: {non_final_mask}")
-            # print(f"State batch: {state_batch.shape}")
-            non_final_next_states = torch.stack([s for s in state_batch
-                                                        if s is not None])
-            
-            # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
-            # columns of actions taken. These are the actions which would've been taken
-            # for each batch state according to policy_net
-            # print(f"action_batch shape: {action_batch.shape}")
-            # print(f"self.dqn_model(state_batch).shape: {self.dqn_model(state_batch).shape}")
-            state_action_values = self.dqn_model(state_batch).gather(1, action_batch.view(-1, 1))
-            
-            # Compute V(s_{t+1}) for all next states.
-            # Expected values of actions for non_final_next_states are computed based
-            # on the "older" target_net; selecting their best reward with max(1)[0].
-            # This is merged based on the mask, such that we'll have either the expected
-            # state value or 0 in case the state was final.
-            next_state_values = torch.zeros(self.batch_size, device=self.device)
-            # print(f"Non final next states = {non_final_next_states.shape}")
-            next_state_values[non_final_mask] = self.target_model(non_final_next_states).max(1)[0].detach()
-            # Compute the expected Q values
-            expected_state_action_values = (next_state_values * self.gamma) + reward_batch
+            expected_state_action_values = (state_values * self.gamma) + reward_batch
 
-            # Compute Huber loss
-            criterion = nn.SmoothL1Loss()
-            loss_Q = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
-            
-            # Optimize the model
-            self.model_optimizer.zero_grad()
-            loss_Q.backward()
-            # for param in self.dqn_model.parameters():
-            #     param.grad.data.clamp_(-1, 1)
-            self.model_optimizer.step()
+        loss_Q = (expected_state_action_values.unsqueeze(1) - state_action_values).pow(2).mean()
+        
+        # Optimize the model
+        self.model_optimizer.zero_grad()
+        loss_Q.backward()
+        # for param in self.dqn_model.parameters():
+        #     param.grad.data.clamp_(-1, 1)
+        self.model_optimizer.step()
             
         self.update_epsilon()
+        
+        if self.update_target_model_counter % self.update_target_frequency == 0:
+            self.target_model.load_state_dict(self.dqn_model.state_dict())
                 
         return 0, loss_Q.item(), 0, self.epsilon
 
