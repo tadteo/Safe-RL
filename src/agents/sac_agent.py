@@ -164,17 +164,22 @@ class SACAgent(Agent):
             if self.has_continuous_action_space:
                 if exploration_on and random.random() <= self.epsilon:
                     action = action_dist.rsample()
+                    info = "random"
                 else:
                     action = action_dist.mean
+                    info = "deterministic"
                 action = torch.tanh(action)
                 # action = action * self.action_range[0] #TODO add maximum range for actions
-                return action.detach().numpy()
+                return action.detach().numpy(), info
             else:
                 if exploration_on and random.random() <= self.epsilon:
                     action = Categorical(logits=action_dist).sample()
+                    info = "random"
                 else:
                     action = torch.argmax(action_dist)
-                return int(action.detach().numpy())
+                    info = "deterministic"
+                    
+                return int(action.detach().numpy()), info
     
     def train_critic(self, previous_state_batch, state_batch, predictions_batch, reward_batch):
         # Compute targets for the Q functions

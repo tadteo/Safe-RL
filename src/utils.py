@@ -19,7 +19,7 @@ def calculate_distance(state,goal_start,goal_end):
     
     # print(max(goal))
     # distance = - max(max(goal),0.00001)
-    distance = - np.linalg.norm(goal-np.zeros_like(goal))
+    distance = - math.e**(goal-np.ones_like(goal))
     # if(max(hazards)>0.8):
     #     distance -=max(max(hazards),0.00001) #min(10/(max(goal)),100)
     # print(f"Distance to goal: {distance_to_goal}")
